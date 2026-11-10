@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: snapdeal-virtual-kam
+    runtime: python
+    region: singapore
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: GROQ_MODELS
+        value: openai/gpt-oss-20b,openai/gpt-oss-120b,qwen/qwen3.6-27b,qwen/qwen3.8-27b
+      - key: GEMINI_MODELS
+        value: gemini-3.5-flash-lite,gemini-3.6-flash
+      - key: TTS_PROVIDER
+        value: auto
+

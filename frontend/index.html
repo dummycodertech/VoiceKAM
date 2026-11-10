@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Snapdeal Virtual KAM — Voice Assistant (Prototype)</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23e11d48'/><text x='50%25' y='54%25' dominant-baseline='middle' text-anchor='middle' fill='white' font-family='sans-serif' font-weight='bold' font-size='18'>R</text></svg>" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand-wrap">
+      <div class="brand-dot">R</div>
+      <div>
+        <div style="font-weight: 700; font-size: 16px;">Snapdeal Virtual KAM — Riya</div>
+        <div style="font-size: 12px; color: var(--muted);">Seller: Rajesh Kumar · Kumar Home &amp; Kitchen (Delhi, 60 SKUs)</div>
+      </div>
+    </div>
+    <div style="display:flex; align-items:center; gap:10px;">
+      <span id="ttsBadge" class="phase-pill">TTS: Auto</span>
+      <span class="prototype-badge">Prototype · Mock Data Only</span>
+    </div>
+  </header>
+
+  <div id="browserBanner" class="banner warn hidden">
+    <span>Web Speech recognition works best in <strong>Google Chrome</strong>. You can also test anytime using the Debug Text box in Settings below.</span>
+  </div>
+
+  <div id="errorBanner" class="banner error hidden">
+    <span id="errorBannerText">Error</span>
+    <button class="btn btn-sm" onclick="document.getElementById('errorBanner').classList.add('hidden')">Dismiss</button>
+  </div>
+
+  <main class="main-grid">
+    <!-- Left Column: Voice Call Screen & Settings -->
+    <section class="card call-stage">
+      <div class="call-topbar">
+        <div style="font-size: 13px; color: var(--muted);">Voice Call Console</div>
+        <div id="callTimer" class="timer-pill">00:00</div>
+      </div>
+
+      <div class="orb-area">
+        <button id="micOrb" class="mic-orb" data-state="idle" type="button">Ready</button>
+        <div id="orbLabel" class="orb-state-label">Click Start Call to talk with Riya</div>
+      </div>
+
+      <div class="call-controls">
+        <button id="btnStartCall" class="btn btn-primary" type="button">Start Call</button>
+        <button id="btnInterrupt" class="btn btn-interrupt" type="button" disabled>Tap to Interrupt (Space)</button>
+        <button id="btnEndCall" class="btn btn-danger" type="button" disabled>End Call</button>
+      </div>
+
+      <div>
+        <div class="section-title">Live Captions</div>
+        <div id="captionsBox" class="captions-box" aria-live="polite">
+          <div style="color: var(--muted); font-size: 13px;">Captions will appear here as you and Riya speak...</div>
+        </div>
+      </div>
+
+      <!-- Settings Drawer -->
+      <div class="settings-drawer">
+        <div class="section-title">Call Settings &amp; Controls</div>
+        <div class="settings-row">
+          <div class="field">
+            <label for="selMode">Call Mode</label>
+            <select id="selMode">
+              <option value="inbound">Inbound (Seller calls)</option>
+              <option value="proactive">Proactive (Riya calls)</option>
+              <option value="followup">Follow-up (+3 Days)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="selLanguage">Language</label>
+            <select id="selLanguage">
+              <option value="en-IN">English (India)</option>
+              <option value="hinglish">Hinglish (Natural Mix)</option>
+              <option value="hi-IN">Hindi (हिंदी)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="selTtsProvider">TTS Provider</label>
+            <select id="selTtsProvider">
+              <option value="auto">Auto (Edge / Browser)</option>
+              <option value="edge-tts">Edge TTS Neural</option>
+              <option value="browser">Browser Speech</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px;">
+          <label class="toggle-line">
+            <input id="chkHeadphones" type="checkbox" />
+            <span>Headphones Mode (True Barge-In)</span>
+          </label>
+          <div style="display:flex; gap:8px;">
+            <button id="btnFollowup" class="btn btn-sm" type="button">Simulate follow-up call (3 days later)</button>
+            <button id="btnToggleDebug" class="btn btn-sm" type="button">Debug Text Box</button>
+          </div>
+        </div>
+
+        <div id="debugBox" class="debug-box hidden">
+          <input id="txtDebugInput" type="text" placeholder="Type seller line (debug/fallback) and press Enter..." />
+          <button id="btnSendDebug" class="btn btn-sm btn-primary" type="button">Send</button>
+        </div>
+
+        <div style="display:flex; flex-wrap:wrap; gap:12px; font-size:11.5px; color:var(--muted); border-top:1px solid var(--border); padding-top:8px;">
+          <span>STT-&gt;Token: <strong id="latencySttToToken">-</strong></span>
+          <span>STT-&gt;Audio: <strong id="latencySttToAudio">-</strong></span>
+          <span>LLM: <strong id="latencyProvider">-</strong></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Right Column: Live KAM Brain Diagnostics & Summary Card -->
+    <section class="card brain-panel">
+      <div>
+        <div class="section-title">Conversation Phase State Machine</div>
+        <div id="phaseStrip" class="phase-strip">
+          <span class="phase-pill active" data-phase="GREETING">Greeting</span>
+          <span class="phase-pill" data-phase="UNDERSTAND">Understand</span>
+          <span class="phase-pill" data-phase="CLARIFY">Clarify</span>
+          <span class="phase-pill" data-phase="REVIEW_COMMITMENTS">Review</span>
+          <span class="phase-pill" data-phase="DIAGNOSE">Diagnose</span>
+          <span class="phase-pill" data-phase="RECOMMEND">Recommend</span>
+          <span class="phase-pill" data-phase="COMMIT">Commit</span>
+          <span class="phase-pill" data-phase="SUMMARY">Summary</span>
+          <span class="phase-pill" data-phase="CLOSE">Close</span>
+        </div>
+      </div>
+
+      <div id="kamBrainRoot" style="font-size: 13px; color: var(--muted);">
+        KAM Brain live diagnostics panel will hydrate here.
+      </div>
+
+      <div id="summaryCardSection" class="hidden"></div>
+    </section>
+  </main>
+
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>
