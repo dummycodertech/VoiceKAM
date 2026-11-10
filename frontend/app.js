@@ -1,5 +1,6 @@
 import{AudioPlaybackQueue}from"/static/audio.js";
 import{createKamBrainController}from"/static/kam_brain.js";
+import{createVoiceViz}from"/static/viz.js";
 const S={inCall:false,sessionId:null,mode:"inbound",language:"en-IN",headphones:false,tts:"auto",orb:"idle",t0:0,timer:null,rec:null,recognizing:false,eou:null,silence:null,reprompted:false,interim:"",final:"",sttEnd:0,abort:null,done:0,hook:null};
 const el={};
 const $=id=>document.getElementById(id);
@@ -100,7 +101,7 @@ export async function startCall({modeOverride=null,priorSessionId=null}={}){
   }catch(e){showError(e.message);endCall()}
 }
 export function endCall(){
-  S.inCall=false;clearInterval(S.timer);stopRec();queue.stopAll();
+  S.inCall=false;clearInterval(S.timer);stopRec();queue.stopAll();S.viz?.stopMic();
   if(S.abort){S.abort.abort();S.abort=null}
   setOrb("idle");el.btnStartCall.disabled=false;el.btnEndCall.disabled=true;el.btnInterrupt.disabled=true;
 }
@@ -143,6 +144,7 @@ async function stream(url,body){
 async function init(){
   ["browserBanner","errorBanner","errorBannerText","btnStartCall","btnEndCall","btnInterrupt","callTimer","micOrb","orbLabel","captionsBox","selMode","selLanguage","chkHeadphones","selTtsProvider","btnToggleDebug","debugBox","txtDebugInput","btnSendDebug","phaseStrip","ttsBadge","latencySttToToken","latencySttToAudio","latencyProvider","btnFollowup","kamBrainRoot","summaryCardSection","btnDismissError"].forEach(i=>el[i]=$(i));
   S.hook=createKamBrainController({rootEl:el.kamBrainRoot,summaryEl:el.summaryCardSection,getAppState:()=>S});
+  S.viz=createVoiceViz({canvas:$("spectrum"),getState:()=>S.orb,getTts:()=>queue.analyser()});
   phases("GREETING",el.selMode.value);setOrb("idle");
   if(!SR())el.browserBanner.classList.remove("hidden");
   try{
