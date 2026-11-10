@@ -1,238 +1,61 @@
-/**
- * Sentence-pipelined TTS audio queue with browser speechSynthesis fallback & 600ms filler masking.
- */
-
-export class AudioPlaybackQueue {
-  constructor({ onSpeakingStart, onSpeakingEnd, onTtsProviderUsed }) {
-    this.onSpeakingStart = onSpeakingStart || (() => {});
-    this.onSpeakingEnd = onSpeakingEnd || (() => {});
-    this.onTtsProviderUsed = onTtsProviderUsed || (() => {});
-    this.queue = [];
-    this.isPlaying = false;
-    this.currentAudio = null;
-    this.aborted = false;
-    this.language = "en-IN";
-    this.ttsProvider = "auto";
-    this.fillerTimer = null;
-    this.abortControllers = new Set();
-    this._generation = 0;
-    this._currentResolve = null;
-  }
-
-  configure({ language, ttsProvider }) {
-    if (language) this.language = language;
-    if (ttsProvider) this.ttsProvider = ttsProvider;
-  }
-
-  playRingtone() {
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const now = ctx.currentTime;
-      for (let i = 0; i < 2; i++) {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = "sine";
-        osc.frequency.value = 440;
-        gain.gain.setValueAtTime(0.0001, now + i * 0.35);
-        gain.gain.exponentialRampToValueAtTime(0.06, now + i * 0.35 + 0.03);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.35 + 0.25);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start(now + i * 0.35);
-        osc.stop(now + i * 0.35 + 0.26);
-      }
-      setTimeout(() => ctx.close().catch(() => {}), 900);
-    } catch {
-      // Autoplay/AudioContext blocked or unsupported; harmless
-    }
-  }
-
-  scheduleLatencyFiller(delayMs = 600) {
+const FILLER={"hi-IN":"जी, एक सेकंड, मैं आपका डेटा देख रही हूँ।",hinglish:"Ji, ek second, main aapka data dekh rahi hoon.","en-IN":"One moment Rajesh ji, checking your account data."};
+const synth=()=>("speechSynthesis" in window?window.speechSynthesis:null);
+export class AudioPlaybackQueue{
+  constructor(cb={}){this.cb=cb;this.queue=[];this.isPlaying=false;this.aborted=false;this.language="en-IN";this.ttsProvider="auto";this.fillerTimer=null;this.fillerOn=false;this.ctrls=new Set();this.gen=0;this.resolveCur=null;this.audio=null}
+  configure({language,ttsProvider}){if(language)this.language=language;if(ttsProvider)this.ttsProvider=ttsProvider}
+  playRingtone(){try{const c=new(window.AudioContext||window.webkitAudioContext)(),t=c.currentTime;for(let i=0;i<2;i++){const o=c.createOscillator(),g=c.createGain(),s=t+i*.35;o.frequency.value=440;g.gain.setValueAtTime(.0001,s);g.gain.exponentialRampToValueAtTime(.06,s+.03);g.gain.exponentialRampToValueAtTime(.0001,s+.25);o.connect(g);g.connect(c.destination);o.start(s);o.stop(s+.26)}setTimeout(()=>c.close().catch(()=>{}),900)}catch{}}
+  scheduleLatencyFiller(ms=600){this.clearLatencyFiller();this.fillerTimer=setTimeout(()=>{if(this.isPlaying||this.queue.length)return;this.fillerOn=true;this.speak(FILLER[this.language]||FILLER["en-IN"],true).finally(()=>{this.fillerOn=false})},ms)}
+  clearLatencyFiller(){clearTimeout(this.fillerTimer);this.fillerTimer=null}
+  enqueueSentence(text,onFirst){
+    const t=(text||"").trim();if(!t)return;
     this.clearLatencyFiller();
-    this.fillerTimer = setTimeout(() => {
-      if (this.isPlaying || this.queue.length > 0) return;
-      const fillerText =
-        this.language === "hi-IN"
-          ? "जी, एक सेकंड, मैं आपका डेटा देख रही हूँ।"
-          : this.language === "hinglish"
-          ? "Ji, ek second, main aapka data dekh rahi hoon."
-          : "One moment Rajesh ji, checking your account data.";
-      this._speakBrowser(fillerText, { isFiller: true }).catch(() => {});
-    }, delayMs);
+    if(this.fillerOn){synth()?.cancel();this.fillerOn=false}   // fix: filler never talks over the first server sentence
+    this.aborted=false;
+    const c=new AbortController();this.ctrls.add(c);
+    const p=this.fetchTts(t,c.signal).finally(()=>this.ctrls.delete(c));  // prefetch N+1 while N plays
+    this.queue.push({text:t,p,onFirst});
+    if(!this.isPlaying)this.drain();
   }
-
-  clearLatencyFiller() {
-    if (this.fillerTimer) {
-      clearTimeout(this.fillerTimer);
-      this.fillerTimer = null;
-    }
+  async fetchTts(text,signal){
+    if(this.ttsProvider==="browser")return{browser:true,provider:"browser"};
+    try{
+      const r=await fetch("/api/tts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text,language:this.language,provider:this.ttsProvider}),signal});
+      if(!r.ok||(r.headers.get("content-type")||"").includes("application/json"))return{browser:true,provider:"browser"};   // 200 + JSON = use browser voice
+      return{blob:await r.blob(),provider:r.headers.get("X-TTS-Provider")||"edge-tts"};
+    }catch{return{browser:true,provider:"browser"}}
   }
-
-  enqueueSentence(speakableText, onFirstAudioCallback) {
-    const clean = (speakableText || "").trim();
-    if (!clean) return;
-    this.clearLatencyFiller();
-    this.aborted = false;
-
-    const controller = new AbortController();
-    this.abortControllers.add(controller);
-
-    // Start fetching TTS audio immediately so sentence N+1 loads while N plays
-    const fetchPromise = this._fetchTtsAudio(clean, controller.signal).finally(() => {
-      this.abortControllers.delete(controller);
-    });
-
-    this.queue.push({ text: clean, fetchPromise, onFirstAudioCallback });
-    if (!this.isPlaying) {
-      this._drainQueue();
+  async drain(){
+    if(this.isPlaying)return;
+    const g=++this.gen;this.isPlaying=true;this.cb.onSpeakingStart?.();
+    while(this.queue.length&&!this.aborted&&g===this.gen){
+      const it=this.queue.shift(),r=await it.p;
+      if(this.aborted||g!==this.gen)break;
+      it.onFirst?.();this.cb.onTtsProviderUsed?.(r.provider);
+      await(r.browser?this.speak(it.text):this.play(r.blob));
     }
+    if(g===this.gen){this.isPlaying=false;this.cb.onSpeakingEnd?.()}
   }
-
-  async _fetchTtsAudio(text, signal) {
-    if (this.ttsProvider === "browser") {
-      return { useBrowser: true, provider: "browser" };
-    }
-    try {
-      const resp = await fetch("/api/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text,
-          language: this.language,
-          provider: this.ttsProvider,
-        }),
-        signal,
-      });
-      const contentType = resp.headers.get("content-type") || "";
-      if (!resp.ok || contentType.includes("application/json")) {
-        return { useBrowser: true, provider: "browser" };
-      }
-      const blob = await resp.blob();
-      const provider = resp.headers.get("X-TTS-Provider") || "edge-tts";
-      return { useBrowser: false, blob, provider };
-    } catch {
-      return { useBrowser: true, provider: "browser" };
-    }
-  }
-
-  async _drainQueue() {
-    if (this.isPlaying) return;
-    const myGen = ++this._generation;
-    this.isPlaying = true;
-    this.onSpeakingStart();
-
-    while (this.queue.length > 0 && !this.aborted && myGen === this._generation) {
-      const item = this.queue.shift();
-      const audioRes = await item.fetchPromise;
-      if (this.aborted || myGen !== this._generation) break;
-
-      if (item.onFirstAudioCallback) {
-        item.onFirstAudioCallback();
-      }
-
-      this.onTtsProviderUsed(audioRes.provider);
-
-      if (audioRes.useBrowser) {
-        await this._speakBrowser(item.text);
-      } else {
-        await this._playBlob(audioRes.blob);
-      }
-    }
-
-    if (myGen === this._generation) {
-      this.isPlaying = false;
-      this.onSpeakingEnd();
-    }
-  }
-
-  _playBlob(blob) {
-    return new Promise((resolve) => {
-      if (this.aborted) {
-        resolve();
-        return;
-      }
-      const url = URL.createObjectURL(blob);
-      const audio = new Audio(url);
-      this.currentAudio = audio;
-      let finished = false;
-      const done = () => {
-        if (finished) return;
-        finished = true;
-        if (this._currentResolve === done) this._currentResolve = null;
-        if (this.currentAudio === audio) this.currentAudio = null;
-        URL.revokeObjectURL(url);
-        resolve();
-      };
-      this._currentResolve = done;
-      audio.onended = done;
-      audio.onerror = done;
-      audio.play().catch(done);
-    });
-  }
-
-  _speakBrowser(text, { isFiller = false } = {}) {
-    return new Promise((resolve) => {
-      if (!("speechSynthesis" in window) || (this.aborted && !isFiller)) {
-        resolve();
-        return;
-      }
-      let finished = false;
-      const done = () => {
-        if (finished) return;
-        finished = true;
-        if (!isFiller && this._currentResolve === done) this._currentResolve = null;
-        resolve();
-      };
-      try {
-        window.speechSynthesis.cancel();
-        const utter = new SpeechSynthesisUtterance(text);
-        utter.lang = this.language === "hi-IN" ? "hi-IN" : "en-IN";
-        utter.rate = 1.03;
-        const voices = window.speechSynthesis.getVoices() || [];
-        const match =
-          voices.find((v) => v.lang.toLowerCase().includes(utter.lang.toLowerCase())) ||
-          voices.find((v) => v.lang.toLowerCase().startsWith("en-in"));
-        if (match) utter.voice = match;
-        if (!isFiller) this._currentResolve = done;
-        utter.onend = done;
-        utter.onerror = done;
-        window.speechSynthesis.speak(utter);
-      } catch {
-        done();
-      }
-    });
-  }
-
-  stopAll() {
-    this.clearLatencyFiller();
-    this._generation++;
-    this.aborted = true;
-    this.queue = [];
-    for (const c of this.abortControllers) {
-      c.abort();
-    }
-    this.abortControllers.clear();
-    if (this.currentAudio) {
-      try {
-        this.currentAudio.pause();
-        this.currentAudio.currentTime = 0;
-      } catch {
-        // ignore
-      }
-      this.currentAudio = null;
-    }
-    if (this._currentResolve) {
-      const fn = this._currentResolve;
-      this._currentResolve = null;
-      fn();
-    }
-    if ("speechSynthesis" in window) {
-      try {
-        window.speechSynthesis.cancel();
-      } catch {
-        // ignore
-      }
-    }
-    this.isPlaying = false;
+  play(blob){return new Promise(res=>{
+    if(this.aborted)return res();
+    const u=URL.createObjectURL(blob),a=new Audio(u);this.audio=a;let d=false;
+    const done=()=>{if(d)return;d=true;if(this.resolveCur===done)this.resolveCur=null;if(this.audio===a)this.audio=null;URL.revokeObjectURL(u);res()};
+    this.resolveCur=done;a.onended=done;a.onerror=done;a.play().catch(done);
+  })}
+  speak(text,filler=false){return new Promise(res=>{
+    const s=synth();if(!s||(this.aborted&&!filler))return res();
+    let d=false;const done=()=>{if(d)return;d=true;if(!filler&&this.resolveCur===done)this.resolveCur=null;res()};
+    try{
+      s.cancel();const u=new SpeechSynthesisUtterance(text);u.lang=this.language==="hi-IN"?"hi-IN":"en-IN";u.rate=1.03;
+      const v=s.getVoices(),m=v.find(x=>x.lang.toLowerCase().includes(u.lang.toLowerCase()))||v.find(x=>x.lang.toLowerCase().startsWith("en-in"));if(m)u.voice=m;
+      if(!filler)this.resolveCur=done;u.onend=done;u.onerror=done;s.speak(u);
+    }catch{done()}
+  })}
+  stopAll(){   // invariant: call this before aborting the chat stream or restarting the mic
+    this.clearLatencyFiller();this.gen++;this.aborted=true;this.queue=[];
+    this.ctrls.forEach(c=>c.abort());this.ctrls.clear();
+    if(this.audio){try{this.audio.pause();this.audio.currentTime=0}catch{}this.audio=null}
+    if(this.resolveCur){const f=this.resolveCur;this.resolveCur=null;f()}
+    try{synth()?.cancel()}catch{}
+    this.fillerOn=false;this.isPlaying=false;
   }
 }

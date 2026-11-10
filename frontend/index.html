@@ -1,168 +1,59 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Snapdeal Virtual KAM — Riya</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='16' fill='%23ff6647'/><text x='50%25' y='54%25' dominant-baseline='middle' text-anchor='middle' fill='white' font-family='sans-serif' font-weight='bold' font-size='17'>R</text></svg>" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/styles.css" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Riya, Snapdeal Virtual KAM</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='9' fill='%2318202f'/><circle cx='16' cy='16' r='7' fill='%23f2a900'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/styles.css">
 </head>
 <body data-completed-streams="0">
-  <!-- Full-Screen Tidewell Fluted Reeded Glass & Sunset Backdrop -->
-  <div class="tidewell-canvas" aria-hidden="true">
-    <div class="tidewell-glow"></div>
-    <div class="tidewell-flutes"></div>
-  </div>
-
-  <!-- Top Navigation Bar (Tidewell Layout: Brand Left | Phase Pill Capsule Center | Badges Right) -->
-  <header class="tidewell-header">
-    <div class="brand-lockup">
-      <span class="brand-wave" aria-hidden="true">~</span>
-      <span class="brand-name">Snapdeal KAM · Riya</span>
-      <span class="brand-divider" aria-hidden="true">/</span>
-      <span class="brand-seller">Kumar Home &amp; Kitchen (60 SKUs)</span>
+<header class="top">
+  <div class="brand"><b>Riya</b><span>Snapdeal Virtual KAM for Kumar Home &amp; Kitchen</span></div>
+  <div class="badges"><span id="ttsBadge" class="chip">TTS: Auto</span><span class="chip warn">Prototype: mock data only</span></div>
+  <nav id="phaseStrip" class="phases" aria-label="Call progress">
+    <span class="phase-pill active" data-phase="GREETING">Greeting</span>
+    <span class="phase-pill" data-phase="UNDERSTAND">Understand</span>
+    <span class="phase-pill" data-phase="CLARIFY">Clarify</span>
+    <span class="phase-pill" data-phase="REVIEW_COMMITMENTS">Review</span>
+    <span class="phase-pill" data-phase="DIAGNOSE">Diagnose</span>
+    <span class="phase-pill" data-phase="RECOMMEND">Recommend</span>
+    <span class="phase-pill" data-phase="COMMIT">Commit</span>
+    <span class="phase-pill" data-phase="SUMMARY">Summary</span>
+    <span class="phase-pill" data-phase="CLOSE">Close</span>
+  </nav>
+</header>
+<div id="browserBanner" class="banner hidden" role="status">Live speech needs Chrome or Edge. In other browsers, type your lines in the test box.</div>
+<div id="errorBanner" class="banner bad hidden" role="alert"><span id="errorBannerText"></span><button id="btnDismissError" class="btn ghost sm" type="button">Dismiss</button></div>
+<main class="grid">
+  <section class="call" aria-label="Call">
+    <div class="stage">
+      <div class="orbwrap"><i class="ring"></i><i class="ring r2"></i><button id="micOrb" class="orb" data-state="idle" type="button" aria-label="Microphone">Ready</button></div>
+      <div class="meta"><span id="callTimer" class="timer">00:00</span><p id="orbLabel">Press Start call to talk with Riya</p></div>
+      <div class="actions">
+        <button id="btnStartCall" class="btn primary" type="button">Start call</button>
+        <button id="btnInterrupt" class="btn" type="button" disabled>Interrupt (Space)</button>
+        <button id="btnEndCall" class="btn ghost" type="button" disabled>End call</button>
+      </div>
     </div>
-
-    <!-- Center Floating Capsule Nav (Tidewell Top Nav) -->
-    <nav id="phaseStrip" class="tidewell-nav-capsule" aria-label="Conversation Phase">
-      <span class="phase-pill active" data-phase="GREETING">Greeting</span>
-      <span class="phase-pill" data-phase="UNDERSTAND">Understand</span>
-      <span class="phase-pill" data-phase="CLARIFY">Clarify</span>
-      <span class="phase-pill" data-phase="REVIEW_COMMITMENTS">Review</span>
-      <span class="phase-pill" data-phase="DIAGNOSE">Diagnose</span>
-      <span class="phase-pill" data-phase="RECOMMEND">Recommend</span>
-      <span class="phase-pill" data-phase="COMMIT">Commit</span>
-      <span class="phase-pill" data-phase="SUMMARY">Summary</span>
-      <span class="phase-pill" data-phase="CLOSE">Close</span>
-    </nav>
-
-    <div class="header-pills">
-      <span id="ttsBadge" class="meta-pill">TTS: Auto</span>
-      <span class="meta-pill meta-pill-proto">PROTOTYPE · MOCK DATA ONLY</span>
+    <div id="captionsBox" class="captions" aria-live="polite"><div class="captions-empty">Captions appear here as you and Riya talk.</div></div>
+    <div class="settings">
+      <label>Call type<select id="selMode"><option value="inbound">Seller calls Riya</option><option value="proactive">Riya calls seller</option><option value="followup">3-day follow-up</option></select></label>
+      <label>Language<select id="selLanguage"><option value="en-IN">English (India)</option><option value="hinglish">Hinglish</option><option value="hi-IN">Hindi</option></select></label>
+      <label>Voice<select id="selTtsProvider"><option value="auto">Auto</option><option value="edge-tts">Neural</option><option value="browser">Browser</option></select></label>
+      <label class="check"><input type="checkbox" id="chkHeadphones"> Headphones: speak to interrupt</label>
+      <div class="row"><button id="btnFollowup" class="btn sm" type="button">Simulate follow-up in 3 days</button><button id="btnToggleDebug" class="btn sm ghost" type="button">Type instead</button></div>
+      <div id="debugBox" class="row hidden"><input id="txtDebugInput" type="text" placeholder="Type what the seller says, then Enter" autocomplete="off"><button id="btnSendDebug" class="btn primary sm" type="button">Send</button></div>
+      <p class="tele">Speech to first word <b id="latencySttToToken">-</b> &nbsp; to first sound <b id="latencySttToAudio">-</b> &nbsp; Model <b id="latencyProvider">-</b></p>
     </div>
-  </header>
-
-  <!-- Hidden System Banners (Playwright Contract) -->
-  <div id="browserBanner" class="alert-banner hidden" role="status">
-    <span>Chrome or Edge is recommended for live Web Speech STT. Use the Debug Input box below in other browsers.</span>
-  </div>
-  <div id="errorBanner" class="alert-banner alert-danger hidden" role="alert">
-    <span id="errorBannerText"></span>
-    <button class="pill-btn dock-mini-btn" type="button" onclick="document.getElementById('errorBanner').classList.add('hidden')">Dismiss</button>
-  </div>
-
-  <!-- Main Spatial Split Layout -->
-  <main class="tidewell-stage">
-    <!-- LEFT: Open Editorial Voice Hero (Zero Outer Wrapper Boxes) -->
-    <section class="hero-voice-column" aria-label="Voice Call Console">
-      <div class="hero-top-cluster">
-        <!-- Acoustic Voice Core + Call Controls -->
-        <div class="voice-orb-cluster">
-          <div class="tidewell-orb-wrap">
-            <div class="orb-halo" aria-hidden="true"></div>
-            <button id="micOrb" class="orb-sphere" data-state="idle" type="button" aria-label="Microphone status orb">Ready</button>
-          </div>
-
-          <div class="voice-cluster-meta">
-            <div class="kicker-row">
-              <span class="live-dot" aria-hidden="true"></span>
-              <span class="kicker-text">VOICE CALL CONSOLE</span>
-              <span id="callTimer" class="timer-tag">00:00</span>
-            </div>
-            <p id="orbLabel" class="orb-status-line">Click Start Call to talk with Riya</p>
-            <div class="hero-cta-row">
-              <button id="btnStartCall" type="button" class="pill-btn pill-btn-coral">Start Call ↗</button>
-              <button id="btnInterrupt" type="button" class="pill-btn pill-btn-frost" disabled>Tap to Interrupt (Space)</button>
-              <button id="btnEndCall" type="button" class="pill-btn pill-btn-ghost" disabled>End Call</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Big Tidewell Editorial Headline -->
-        <h1 class="tidewell-display-title">
-          Revenue recovery,<br />live by voice.
-        </h1>
-        <p class="tidewell-display-sub">
-          Zero-math deterministic store diagnosis, live bilingual voice barge-in, and closed-loop seller commitments—no passive FAQ bots.
-        </p>
-
-        <!-- Floating Live Transcript Stream -->
-        <div class="transcript-glass-box">
-          <div class="transcript-header">
-            <span>LIVE TRANSCRIPT</span>
-            <span>EN · HI · HINGLISH</span>
-          </div>
-          <div id="captionsBox" class="transcript-feed" aria-live="polite">
-            <div class="captions-empty">Captions will appear here as you and Riya speak...</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Bottom Compact Control Dock -->
-      <div class="control-dock-glass">
-        <div class="dock-selects-row">
-          <label class="dock-field">
-            <span>Mode</span>
-            <select id="selMode">
-              <option value="inbound">Inbound Call</option>
-              <option value="proactive">Proactive Call</option>
-              <option value="followup">3-Day Follow-Up</option>
-            </select>
-          </label>
-          <label class="dock-field">
-            <span>Language</span>
-            <select id="selLanguage">
-              <option value="en-IN">English (India)</option>
-              <option value="hinglish">Hinglish</option>
-              <option value="hi-IN">Hindi (हिंदी)</option>
-            </select>
-          </label>
-          <label class="dock-field">
-            <span>Voice Engine</span>
-            <select id="selTtsProvider">
-              <option value="auto">Auto (Edge/Browser)</option>
-              <option value="edge-tts">Edge Neural</option>
-              <option value="browser">Browser TTS</option>
-            </select>
-          </label>
-        </div>
-
-        <div class="dock-actions-bar">
-          <label class="bargein-toggle">
-            <input type="checkbox" id="chkHeadphones" />
-            <span>Headphones Barge-In</span>
-          </label>
-          <div class="dock-btns">
-            <button id="btnFollowup" type="button" class="pill-btn dock-mini-btn">Simulate +3d Follow-Up</button>
-            <button id="btnToggleDebug" type="button" class="pill-btn dock-mini-btn">Debug Input</button>
-          </div>
-        </div>
-
-        <div id="debugBox" class="dock-debug-row hidden">
-          <input id="txtDebugInput" type="text" placeholder="Type seller line and press Enter..." autocomplete="off" />
-          <button id="btnSendDebug" type="button" class="pill-btn pill-btn-coral">Send</button>
-        </div>
-
-        <div class="dock-telemetry-strip">
-          <span>STT→Token: <strong id="latencySttToToken">-</strong></span>
-          <span>STT→Audio: <strong id="latencySttToAudio">-</strong></span>
-          <span>Model: <strong id="latencyProvider">-</strong></span>
-        </div>
-      </div>
-    </section>
-
-    <!-- RIGHT: Floating Glass Intelligence Deck -->
-    <section class="kam-deck-column" aria-label="KAM Brain Telemetry Deck">
-      <div id="kamBrainRoot" class="kam-deck-scroll">
-        KAM Brain live diagnostics panel will hydrate here.
-      </div>
-      <div id="summaryCardSection" class="kam-summary-deck hidden"></div>
-    </section>
-  </main>
-
-  <script type="module" src="/static/app.js"></script>
+  </section>
+  <section class="file" aria-label="Riya's case file">
+    <div id="kamBrainRoot"></div>
+    <div id="summaryCardSection" class="hidden"></div>
+  </section>
+</main>
+<script type="module" src="/static/app.js"></script>
 </body>
 </html>

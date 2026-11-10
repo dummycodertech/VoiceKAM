@@ -213,3 +213,52 @@ def test_enforce_voice_length_and_number_grounding_checker():
     bad = find_ungrounded_numbers("Sales fell 47.9% to Rs 99,000 across 25 products.", grounded)
     assert set(bad) == {"47.9", "99,000", "25"}
 
+
+class ChunkedTokenProvider(LLMProvider):
+    def __init__(self, chunks: list[str], provider_name: str = "groq", model_name: str = "openai/gpt-oss-20b") -> None:
+        self.chunks = chunks
+        self.provider_name = provider_name
+        self.model_name = model_name
+
+    def is_configured(self) -> bool:
+        return True
+
+    async def stream_turn(
+        self,
+        messages: list[CanonicalMessage],
+        tools: list[dict[str, Any]],
+        temperature: float = 0.25,
+        max_tokens: int = 220,
+    ) -> AsyncIterator[LLMStreamChunk]:
+        for c in self.chunks:
+            yield LLMStreamChunk(type="token", text=c, provider=self.provider_name, model=self.model_name)
+        yield LLMStreamChunk(type="done", provider=self.provider_name, model=self.model_name)
+
+
+@pytest.mark.asyncio
+async def test_sentence_boundary_does_not_split_decimal_numbers():
+    from app.agent.orchestrator import _SENTENCE_BOUNDARY_RE
+
+    # Direct regex verification: decimal periods stay together while digit-ending sentences followed by space split
+    assert _SENTENCE_BOUNDARY_RE.match("I see your sales fell 32.") is None
+    assert _SENTENCE_BOUNDARY_RE.match("Sales fell 32.5% today.")[1] == "Sales fell 32.5% today."
+    assert _SENTENCE_BOUNDARY_RE.match("Sales fell 32.5% to Rs 1,35,000.") is None
+    assert _SENTENCE_BOUNDARY_RE.match("Sales fell 32.5% to Rs 1,35,000. Have...")[1] == "Sales fell 32.5% to Rs 1,35,000."
+    assert _SENTENCE_BOUNDARY_RE.match("ASP stayed Rs 500. Let us fix it.")[1] == "ASP stayed Rs 500."
+
+    # Streaming token boundary verification: split right around '.' in '32.5%'
+    store = SessionStore()
+    session = store.create(mode="inbound", language="en-IN")
+    p = ChunkedTokenProvider(
+        ["Sales dropped ", "32", ".", "5%", " to Rs 1,35,000. ", "ASP stayed Rs 500. ", "How should we fix it?"]
+    )
+    orch = AgentOrchestrator(LLMRouter(providers=[p]))
+    events = [ev async for ev in orch.run_turn(session, "Why did my sales drop?")]
+    sentences = [ev["data"]["text"] for ev in events if ev["event"] == "sentence"]
+    assert sentences == [
+        "Sales dropped 32.5% to Rs 1,35,000.",
+        "ASP stayed Rs 500.",
+        "How should we fix it?",
+    ]
+
+

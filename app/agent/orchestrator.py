@@ -27,7 +27,10 @@ from app.llm.base import CanonicalMessage, ToolCallRequest
 from app.llm.router import LLMRouter
 
 MAX_TOOL_ROUNDS = 2
-_SENTENCE_BOUNDARY_RE = re.compile(r"(.+?[.?!\u0964])(?:\s+|$)", re.DOTALL)
+_SENTENCE_BOUNDARY_RE = re.compile(
+    r"(.+?(?:[?!\u0964]|(?<!\d)\.(?!\d)|\.(?=\s)))(?:\s+|$)",
+    re.DOTALL,
+)
 
 
 def _sse(event: str, data: dict[str, Any]) -> dict[str, Any]:

@@ -21,6 +21,7 @@ cloudflared
 *.wav
 logs/
 scratch/
+frontend_old_backup/
 
 # OS / IDE
 .DS_Store

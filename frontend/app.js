@@ -1,642 +1,174 @@
-/**
- * Snapdeal Virtual KAM - Walking Skeleton + Full Voice Loop Controller.
- */
+import{AudioPlaybackQueue}from"/static/audio.js";
+import{createKamBrainController}from"/static/kam_brain.js";
+const S={inCall:false,sessionId:null,mode:"inbound",language:"en-IN",headphones:false,tts:"auto",orb:"idle",t0:0,timer:null,rec:null,recognizing:false,eou:null,silence:null,reprompted:false,interim:"",final:"",sttEnd:0,abort:null,done:0,hook:null};
+const el={};
+const $=id=>document.getElementById(id);
+const LABEL={idle:["Ready","Press Start call to talk with Riya"],listening:["Listening","Go ahead, Riya replies after a short pause"],thinking:["Checking","Riya is looking at your store data"],speaking:["Speaking",""]};
+const REPROMPT={"hi-IN":"राजेश जी, क्या आप सुन रहे हैं? आप बोल सकते हैं।",hinglish:"Rajesh ji, aap line par hain? Aap bata sakte hain.","en-IN":"Rajesh ji, are you still there? I am listening whenever you are ready."};
+const SR=()=>window.SpeechRecognition||window.webkitSpeechRecognition||null;
 
-import { AudioPlaybackQueue } from "/static/audio.js";
-import { createKamBrainController } from "/static/kam_brain.js";
-
-const state = {
-  inCall: false,
-  sessionId: null,
-  mode: "inbound",
-  language: "en-IN",
-  headphonesMode: false,
-  ttsProvider: "auto",
-  orbState: "idle", // idle | listening | thinking | speaking
-  callStartMs: 0,
-  timerHandle: null,
-  recognition: null,
-  recognizing: false,
-  eouTimer: null,
-  silencePromptTimer: null,
-  didSilenceReprompt: false,
-  interimTranscript: "",
-  finalTranscript: "",
-  sttEndMs: 0,
-  firstTokenClientMs: null,
-  firstAudioClientMs: null,
-  chatAbortController: null,
-  kamBrainHook: null,
-  completedStreams: 0,
-};
-
-const el = {};
-
-function cacheElements() {
-  const ids = [
-    "browserBanner", "errorBanner", "errorBannerText", "btnStartCall", "btnEndCall",
-    "btnInterrupt", "callTimer", "micOrb", "orbLabel", "captionsBox",
-    "selMode", "selLanguage", "chkHeadphones", "selTtsProvider", "btnToggleDebug",
-    "debugBox", "txtDebugInput", "btnSendDebug", "phaseStrip", "ttsBadge",
-    "latencySttToToken", "latencySttToAudio", "latencyProvider",
-    "btnFollowup", "kamBrainRoot", "summaryCardSection",
-  ];
-  for (const id of ids) {
-    el[id] = document.getElementById(id);
-  }
-}
-
-const audioQueue = new AudioPlaybackQueue({
-  onSpeakingStart: () => {
-    setOrbState("speaking");
-    if (!state.headphonesMode) {
-      stopRecognition();
-    }
-    if (el.btnInterrupt) el.btnInterrupt.disabled = false;
-  },
-  onSpeakingEnd: () => {
-    if (el.btnInterrupt) el.btnInterrupt.disabled = true;
-    if (state.inCall && state.orbState !== "thinking") {
-      startListening();
-    }
-  },
-  onTtsProviderUsed: (provider) => {
-    if (el.ttsBadge) el.ttsBadge.textContent = `TTS: ${provider}`;
-  },
+const queue=new AudioPlaybackQueue({
+  onSpeakingStart(){setOrb("speaking");if(!S.headphones)stopRec();el.btnInterrupt.disabled=false},
+  onSpeakingEnd(){el.btnInterrupt.disabled=true;if(S.inCall&&S.orb!=="thinking")listen()},
+  onTtsProviderUsed(p){el.ttsBadge.textContent="TTS: "+p}
 });
 
-export function setKamBrainHook(hook) {
-  state.kamBrainHook = hook;
+function setOrb(s){
+  S.orb=s;el.micOrb.dataset.state=s;el.micOrb.textContent=LABEL[s][0];   // micOrb stays text-only
+  el.orbLabel.textContent=s==="speaking"?(S.headphones?"Riya is speaking. Talk to interrupt.":"Riya is speaking. Press Space to interrupt."):LABEL[s][1];
 }
-
-export function getAppState() {
-  return state;
+const showError=m=>{el.errorBannerText.textContent=m;el.errorBanner.classList.remove("hidden")};
+function caption(who,text,{interim=false,id=null}={}){
+  el.captionsBox.querySelector(".captions-empty")?.remove();
+  let n=id&&$(id);
+  if(!n){n=document.createElement("div");if(id)n.id=id;n.innerHTML='<div class="caption-who"></div><div class="caption-body"></div>';n.firstChild.textContent=who==="kam"?"Riya":"Rajesh ji";el.captionsBox.append(n)}
+  n.className=`caption-line ${who}${interim?" interim":""}`;n.lastChild.textContent=text;el.captionsBox.scrollTop=el.captionsBox.scrollHeight;
 }
-
-function setOrbState(next) {
-  state.orbState = next;
-  if (el.micOrb) {
-    el.micOrb.dataset.state = next;
-    const labels = {
-      idle: "Ready",
-      listening: "Listening...",
-      thinking: "Checking...",
-      speaking: "Speaking",
-    };
-    el.micOrb.textContent = labels[next] || next;
-  }
-  if (el.orbLabel) {
-    const desc = {
-      idle: "Click Start Call to talk with Riya",
-      listening: "Listening to Rajesh ji (800ms pause sends)",
-      thinking: "Riya is analyzing your store data...",
-      speaking: state.headphonesMode
-        ? "Riya speaking (Headphones mode: speak anytime to interrupt)"
-        : "Riya speaking (Tap Interrupt or Spacebar to speak)",
-    };
-    el.orbLabel.textContent = desc[next] || "";
-  }
-}
-
-function showError(msg) {
-  if (!el.errorBanner || !el.errorBannerText) return;
-  el.errorBannerText.textContent = msg;
-  el.errorBanner.classList.remove("hidden");
-}
-
-function clearError() {
-  if (el.errorBanner) el.errorBanner.classList.add("hidden");
-}
-
-function appendCaption(who, text, { interim = false, id = null } = {}) {
-  if (!el.captionsBox) return null;
-  let node = id ? document.getElementById(id) : null;
-  if (!node) {
-    node = document.createElement("div");
-    if (id) node.id = id;
-    node.className = `caption-line ${who}${interim ? " interim" : ""}`;
-    const label = document.createElement("div");
-    label.className = "caption-who";
-    label.textContent = who === "kam" ? "Riya (Virtual KAM)" : "Rajesh ji (Seller)";
-    const body = document.createElement("div");
-    body.className = "caption-body";
-    node.appendChild(label);
-    node.appendChild(body);
-    el.captionsBox.appendChild(node);
-  }
-  node.className = `caption-line ${who}${interim ? " interim" : ""}`;
-  node.querySelector(".caption-body").textContent = text;
-  el.captionsBox.scrollTop = el.captionsBox.scrollHeight;
-  return node;
-}
-
-function updatePhaseStrip(activePhase, mode = state.mode) {
-  if (!el.phaseStrip) return;
-  const pills = el.phaseStrip.querySelectorAll(".phase-pill");
-  const isFollowup = mode === "followup";
-  let seenActive = false;
-  pills.forEach((pill) => {
-    const p = pill.dataset.phase;
-    pill.classList.remove("active", "done", "hidden");
-    if (!isFollowup && p === "REVIEW_COMMITMENTS") {
-      pill.classList.add("hidden");
-      return;
-    }
-    if (isFollowup && (p === "UNDERSTAND" || p === "CLARIFY" || p === "DIAGNOSE")) {
-      pill.classList.add("hidden");
-      return;
-    }
-    if (p === activePhase) {
-      pill.classList.add("active");
-      seenActive = true;
-    } else if (!seenActive) {
-      pill.classList.add("done");
-    }
+function phases(active,mode=S.mode){
+  let seen=false;const fu=mode==="followup";
+  el.phaseStrip.querySelectorAll(".phase-pill").forEach(p=>{
+    const k=p.dataset.phase;p.classList.remove("active","done","hidden");
+    if((!fu&&k==="REVIEW_COMMITMENTS")||(fu&&["UNDERSTAND","CLARIFY","DIAGNOSE"].includes(k)))return p.classList.add("hidden");
+    if(k===active){p.classList.add("active");seen=true}else if(!seen)p.classList.add("done");
   });
 }
-
-function startCallTimer() {
-  state.callStartMs = Date.now();
-  clearInterval(state.timerHandle);
-  state.timerHandle = setInterval(() => {
-    const sec = Math.floor((Date.now() - state.callStartMs) / 1000);
-    const mm = String(Math.floor(sec / 60)).padStart(2, "0");
-    const ss = String(sec % 60).padStart(2, "0");
-    if (el.callTimer) el.callTimer.textContent = `${mm}:${ss}`;
-  }, 500);
+function stopRec(){clearTimeout(S.eou);clearTimeout(S.silence);if(S.rec&&S.recognizing){try{S.rec.stop()}catch{}}S.recognizing=false}
+function armSilence(){
+  clearTimeout(S.silence);if(!S.inCall||S.reprompted)return;
+  S.silence=setTimeout(()=>{
+    if(!S.inCall||S.orb!=="listening"||S.reprompted)return;
+    S.reprompted=true;const t=REPROMPT[S.language]||REPROMPT["en-IN"];caption("kam",t);queue.enqueueSentence(t);
+  },6000);
 }
-
-function stopCallTimer() {
-  clearInterval(state.timerHandle);
-  state.timerHandle = null;
-}
-
-function getSpeechRecognitionCtor() {
-  return window.SpeechRecognition || window.webkitSpeechRecognition || null;
-}
-
-function stopRecognition() {
-  clearTimeout(state.eouTimer);
-  clearTimeout(state.silencePromptTimer);
-  if (state.recognition && state.recognizing) {
-    try {
-      state.recognition.stop();
-    } catch {
-      // ignore
-    }
-  }
-  state.recognizing = false;
-}
-
-function scheduleSilenceReprompt() {
-  clearTimeout(state.silencePromptTimer);
-  if (!state.inCall || state.didSilenceReprompt) return;
-  state.silencePromptTimer = setTimeout(() => {
-    if (!state.inCall || state.orbState !== "listening" || state.didSilenceReprompt) return;
-    state.didSilenceReprompt = true;
-    const prompt =
-      state.language === "hi-IN"
-        ? "राजेश जी, क्या आप सुन रहे हैं? आप बोल सकते हैं।"
-        : state.language === "hinglish"
-        ? "Rajesh ji, aap line par hain? Aap bata sakte hain."
-        : "Rajesh ji, are you still there? I am listening whenever you are ready.";
-    appendCaption("kam", prompt);
-    audioQueue.enqueueSentence(prompt);
-  }, 6000);
-}
-
-function startListening() {
-  if (!state.inCall) return;
-  setOrbState("listening");
-  state.interimTranscript = "";
-  state.finalTranscript = "";
-  scheduleSilenceReprompt();
-
-  const SR = getSpeechRecognitionCtor();
-  if (!SR) {
-    if (el.browserBanner) el.browserBanner.classList.remove("hidden");
-    return;
-  }
-
-  if (state.recognizing) return;
-
-  try {
-    const rec = new SR();
-    rec.lang = state.language === "hi-IN" ? "hi-IN" : "en-IN";
-    rec.interimResults = true;
-    rec.continuous = true;
-    rec.maxAlternatives = 1;
-
-    rec.onstart = () => {
-      state.recognizing = true;
+function listen(){
+  if(!S.inCall)return;
+  setOrb("listening");S.interim=S.final="";armSilence();
+  const C=SR();if(!C){el.browserBanner.classList.remove("hidden");return}
+  if(S.recognizing)return;
+  try{
+    const r=new C();r.lang=S.language==="hi-IN"?"hi-IN":"en-IN";r.interimResults=true;r.continuous=true;r.maxAlternatives=1;
+    r.onstart=()=>{S.recognizing=true};
+    r.onspeechstart=()=>{clearTimeout(S.silence);if(S.headphones&&queue.isPlaying)interrupt()};
+    r.onresult=e=>{
+      clearTimeout(S.silence);let f="",i="";
+      for(let k=e.resultIndex;k<e.results.length;k++){const x=e.results[k];x.isFinal?f+=x[0].transcript+" ":i+=x[0].transcript}
+      if(f)S.final+=f;S.interim=i;
+      const all=(S.final+" "+S.interim).trim();if(!all)return;
+      caption("seller",all,{interim:true,id:"seller-live-caption"});
+      clearTimeout(S.eou);   // 800 ms of quiet ends the utterance
+      S.eou=setTimeout(()=>{
+        const send=(S.final+" "+S.interim).trim();S.final=S.interim="";if(!send)return;
+        const n=$("seller-live-caption");if(n){n.removeAttribute("id");n.classList.remove("interim")}
+        stopRec();say(send);
+      },800);
     };
-
-    rec.onspeechstart = () => {
-      clearTimeout(state.silencePromptTimer);
-      if (state.headphonesMode && audioQueue.isPlaying) {
-        handleInterrupt();
-      }
-    };
-
-    rec.onresult = (event) => {
-      clearTimeout(state.silencePromptTimer);
-      let finalChunk = "";
-      let interimChunk = "";
-      let lowConfidence = false;
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const res = event.results[i];
-        const alt = res[0];
-        if (res.isFinal) {
-          finalChunk += alt.transcript + " ";
-          if (typeof alt.confidence === "number" && alt.confidence > 0 && alt.confidence < 0.45) {
-            lowConfidence = true;
-          }
-        } else {
-          interimChunk += alt.transcript;
-        }
-      }
-      if (finalChunk) state.finalTranscript += finalChunk;
-      state.interimTranscript = interimChunk;
-
-      const combined = (state.finalTranscript + " " + state.interimTranscript).trim();
-      if (combined) {
-        appendCaption("seller", combined + (lowConfidence ? " (confirming...)" : ""), {
-          interim: true,
-          id: "seller-live-caption",
-        });
-        // 800ms end-of-utterance silence timer
-        clearTimeout(state.eouTimer);
-        state.eouTimer = setTimeout(() => {
-          const toSend = (state.finalTranscript + " " + state.interimTranscript).trim();
-          state.finalTranscript = "";
-          state.interimTranscript = "";
-          if (toSend) {
-            const liveNode = document.getElementById("seller-live-caption");
-            if (liveNode) liveNode.removeAttribute("id");
-            if (liveNode) liveNode.classList.remove("interim");
-            stopRecognition();
-            sendUserUtterance(toSend);
-          }
-        }, 800);
-      }
-    };
-
-    rec.onerror = (ev) => {
-      state.recognizing = false;
-      if (ev.error === "not-allowed" || ev.error === "service-not-allowed") {
-        showError("Microphone permission denied. Enable mic access or use the Debug Text box in Settings.");
-      }
-    };
-
-    rec.onend = () => {
-      state.recognizing = false;
-      if (state.inCall && (state.orbState === "listening" || state.headphonesMode)) {
-        // Keep listening unless half-duplex speaking
-        setTimeout(() => {
-          if (state.inCall && (state.orbState === "listening" || state.headphonesMode) && !state.recognizing) {
-            try {
-              rec.start();
-            } catch {
-              // ignore
-            }
-          }
-        }, 180);
-      }
-    };
-
-    state.recognition = rec;
-    rec.start();
-  } catch (err) {
-    showError("Speech recognition unavailable: " + err.message);
+    r.onerror=e=>{S.recognizing=false;if(["not-allowed","service-not-allowed"].includes(e.error))showError("Microphone is blocked. Allow mic access in the browser, or use Type instead.")};
+    r.onend=()=>{S.recognizing=false;if(S.inCall&&(S.orb==="listening"||S.headphones))setTimeout(()=>{if(S.inCall&&(S.orb==="listening"||S.headphones)&&!S.recognizing){try{r.start()}catch{}}},180)};
+    S.rec=r;r.start();
+  }catch(err){showError("Speech recognition is unavailable: "+err.message)}
+}
+export function interrupt(){   // order matters: audio first, then stream, then mic
+  if(!S.inCall)return;
+  queue.stopAll();if(S.abort){S.abort.abort();S.abort=null}listen();
+}
+async function sse(res,on){
+  const rd=res.body.getReader(),dec=new TextDecoder();let buf="";
+  for(;;){
+    const{done,value}=await rd.read();if(done)break;
+    buf+=dec.decode(value,{stream:true});const parts=buf.split("\n\n");buf=parts.pop()||"";
+    for(const p of parts){let ev="message",d=null;
+      for(const l of p.split("\n")){if(l.startsWith("event:"))ev=l.slice(6).trim();else if(l.startsWith("data:")){try{d=JSON.parse(l.slice(5).trim())}catch{}}}
+      if(d!==null)on(ev,d)}
   }
 }
-
-export function handleInterrupt() {
-  if (!state.inCall) return;
-  audioQueue.stopAll();
-  if (state.chatAbortController) {
-    state.chatAbortController.abort();
-    state.chatAbortController = null;
-  }
-  startListening();
+export async function startCall({modeOverride=null,priorSessionId=null}={}){
+  el.errorBanner.classList.add("hidden");queue.stopAll();stopRec();
+  if(modeOverride){S.mode=modeOverride;el.selMode.value=modeOverride}else S.mode=el.selMode.value;
+  S.language=el.selLanguage.value;S.headphones=el.chkHeadphones.checked;S.tts=el.selTtsProvider.value;
+  queue.configure({language:S.language,ttsProvider:S.tts});
+  S.inCall=true;S.reprompted=false;el.captionsBox.innerHTML="";el.summaryCardSection.classList.add("hidden");
+  el.btnStartCall.disabled=true;el.btnEndCall.disabled=false;
+  queue.playRingtone();setOrb("thinking");   // ringtone runs inside the click so audio is unlocked
+  clearInterval(S.timer);S.t0=Date.now();
+  S.timer=setInterval(()=>{const s=Math.floor((Date.now()-S.t0)/1e3);el.callTimer.textContent=String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0")},500);
+  try{
+    const r=await fetch("/api/session/start",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mode:S.mode,language:S.language,prior_session_id:priorSessionId})});
+    if(!r.ok)throw new Error(`Could not start the call (${r.status})`);
+    const p=await r.json();S.sessionId=p.session_id;
+    phases(p.session?.phase||"GREETING",p.session?.mode||S.mode);S.hook?.onSessionStarted?.(p);
+    await stream(`/api/session/${S.sessionId}/greeting`,{});
+  }catch(e){showError(e.message);endCall()}
 }
-
-async function readSseStream(response, onEvent) {
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder("utf-8");
-  let buffer = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const parts = buffer.split("\n\n");
-    buffer = parts.pop() || "";
-    for (const part of parts) {
-      if (!part.trim()) continue;
-      let eventName = "message";
-      let dataJson = null;
-      for (const line of part.split("\n")) {
-        if (line.startsWith("event:")) eventName = line.slice(6).trim();
-        else if (line.startsWith("data:")) {
-          try {
-            dataJson = JSON.parse(line.slice(5).trim());
-          } catch {
-            // ignore partial
-          }
-        }
-      }
-      if (dataJson !== null) {
-        onEvent(eventName, dataJson);
-      }
-    }
-  }
+export function endCall(){
+  S.inCall=false;clearInterval(S.timer);stopRec();queue.stopAll();
+  if(S.abort){S.abort.abort();S.abort=null}
+  setOrb("idle");el.btnStartCall.disabled=false;el.btnEndCall.disabled=true;el.btnInterrupt.disabled=true;
 }
-
-export async function startCall({ modeOverride = null, priorSessionId = null } = {}) {
-  clearError();
-  audioQueue.stopAll();
-  stopRecognition();
-
-  if (modeOverride) {
-    state.mode = modeOverride;
-    if (el.selMode) el.selMode.value = modeOverride;
-  } else if (el.selMode) {
-    state.mode = el.selMode.value;
-  }
-
-  state.language = el.selLanguage ? el.selLanguage.value : "en-IN";
-  state.headphonesMode = el.chkHeadphones ? el.chkHeadphones.checked : false;
-  state.ttsProvider = el.selTtsProvider ? el.selTtsProvider.value : "auto";
-  audioQueue.configure({ language: state.language, ttsProvider: state.ttsProvider });
-
-  state.inCall = true;
-  state.didSilenceReprompt = false;
-  if (el.captionsBox) el.captionsBox.innerHTML = "";
-  if (el.summaryCardSection) el.summaryCardSection.classList.add("hidden");
-  if (el.btnStartCall) el.btnStartCall.disabled = true;
-  if (el.btnEndCall) el.btnEndCall.disabled = false;
-
-  audioQueue.playRingtone();
-  setOrbState("thinking");
-  startCallTimer();
-
-  try {
-    const resp = await fetch("/api/session/start", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        mode: state.mode,
-        language: state.language,
-        prior_session_id: priorSessionId,
-      }),
+export async function say(text){
+  const t=(text||"").trim();if(!t)return;
+  if(!S.inCall||!S.sessionId)await startCall();
+  el.errorBanner.classList.add("hidden");queue.stopAll();S.reprompted=false;S.sttEnd=performance.now();
+  const last=el.captionsBox.lastElementChild;
+  if(!last||!last.classList.contains("seller")||last.lastChild.textContent!==t)caption("seller",t);
+  setOrb("thinking");queue.scheduleLatencyFiller(600);
+  await stream("/api/chat",{session_id:S.sessionId,text:t,language:S.language});
+}
+async function stream(url,body){
+  S.abort?.abort();const ac=new AbortController();S.abort=ac;
+  const cid="kam-live-"+Date.now();let text="",gotTok=false,gotAud=false;
+  const resume=()=>{if(!queue.isPlaying&&!queue.queue.length&&S.inCall){queue.clearLatencyFiller();listen()}};
+  try{
+    const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),signal:ac.signal});
+    if(!r.ok)throw new Error(`Riya could not answer (HTTP ${r.status})`);
+    await sse(r,(ev,d)=>{
+      const h=S.hook;
+      if(ev==="phase"){if(d.mode)S.mode=d.mode;phases(d.phase,d.mode||S.mode);h?.onPhase?.(d)}
+      else if(ev==="tool_start")h?.onToolCall?.(d);
+      else if(ev==="tool_result")h?.onToolResult?.(d);
+      else if(ev==="failover")h?.onFailover?.(d);
+      else if(ev==="token"){
+        if(!gotTok&&S.sttEnd){gotTok=true;el.latencySttToToken.textContent=Math.round(performance.now()-S.sttEnd)+" ms"}
+        text+=d.text||"";caption("kam",text,{id:cid});
+      }else if(ev==="sentence")queue.enqueueSentence(d.speakable||d.text,()=>{if(!gotAud&&S.sttEnd){gotAud=true;el.latencySttToAudio.textContent=Math.round(performance.now()-S.sttEnd)+" ms"}});
+      else if(ev==="summary_card")h?.onSummaryCard?.(d);
+      else if(ev==="latency"){if(d.provider)el.latencyProvider.textContent=d.provider;h?.onLatency?.(d)}
+      else if(ev==="done"){
+        if(d.text)caption("kam",d.text,{id:cid});
+        phases(d.phase,S.mode);S.done++;document.body.dataset.completedStreams=String(S.done);h?.onDone?.(d);resume();
+      }else if(ev==="error"){queue.clearLatencyFiller();showError(d.message||"Riya could not answer.");if(S.inCall)listen()}
     });
-    if (!resp.ok) throw new Error(`Failed to start session (${resp.status})`);
-    const payload = await resp.json();
-    state.sessionId = payload.session_id;
-    updatePhaseStrip(payload.session?.phase || "GREETING", payload.session?.mode || state.mode);
-    if (state.kamBrainHook && state.kamBrainHook.onSessionStarted) {
-      state.kamBrainHook.onSessionStarted(payload);
-    }
-
-    // Stream greeting
-    await consumeAgentStream(`/api/session/${state.sessionId}/greeting`, {});
-  } catch (err) {
-    showError(err.message);
-    endCall();
-  }
+  }catch(e){if(e.name!=="AbortError"){queue.clearLatencyFiller();showError(e.message);if(S.inCall)listen()}}
+  finally{if(S.abort===ac)S.abort=null}
 }
-
-export function endCall() {
-  state.inCall = false;
-  stopCallTimer();
-  stopRecognition();
-  audioQueue.stopAll();
-  if (state.chatAbortController) {
-    state.chatAbortController.abort();
-    state.chatAbortController = null;
-  }
-  setOrbState("idle");
-  if (el.btnStartCall) el.btnStartCall.disabled = false;
-  if (el.btnEndCall) el.btnEndCall.disabled = true;
-  if (el.btnInterrupt) el.btnInterrupt.disabled = true;
-}
-
-export async function sendUserUtterance(text) {
-  const clean = (text || "").trim();
-  if (!clean) return;
-  if (!state.inCall || !state.sessionId) {
-    await startCall();
-  }
-  clearError();
-  audioQueue.stopAll();
-  state.didSilenceReprompt = false;
-  state.sttEndMs = performance.now();
-  state.firstTokenClientMs = null;
-  state.firstAudioClientMs = null;
-
-  // Avoid duplicate caption if live interim caption didn't just commit it
-  const existingLast = el.captionsBox?.lastElementChild;
-  if (!existingLast || !existingLast.classList.contains("seller") || existingLast.querySelector(".caption-body")?.textContent !== clean) {
-    appendCaption("seller", clean);
-  }
-
-  setOrbState("thinking");
-  audioQueue.scheduleLatencyFiller(600);
-
-  await consumeAgentStream("/api/chat", {
-    session_id: state.sessionId,
-    text: clean,
-    language: state.language,
+async function init(){
+  ["browserBanner","errorBanner","errorBannerText","btnStartCall","btnEndCall","btnInterrupt","callTimer","micOrb","orbLabel","captionsBox","selMode","selLanguage","chkHeadphones","selTtsProvider","btnToggleDebug","debugBox","txtDebugInput","btnSendDebug","phaseStrip","ttsBadge","latencySttToToken","latencySttToAudio","latencyProvider","btnFollowup","kamBrainRoot","summaryCardSection","btnDismissError"].forEach(i=>el[i]=$(i));
+  S.hook=createKamBrainController({rootEl:el.kamBrainRoot,summaryEl:el.summaryCardSection,getAppState:()=>S});
+  phases("GREETING",el.selMode.value);setOrb("idle");
+  if(!SR())el.browserBanner.classList.remove("hidden");
+  try{
+    const[h,d]=await Promise.all([fetch("/api/health"),fetch("/api/demo-data")]);
+    if(h.ok&&!(await h.json()).active_llm_chain?.length)showError("No LLM keys are configured. Add GROQ_API_KEY or GEMINI_API_KEY to .env.");
+    if(d.ok)S.hook.onDemoData(await d.json());
+  }catch{}
+  el.btnStartCall.onclick=()=>startCall();el.btnEndCall.onclick=endCall;el.btnInterrupt.onclick=interrupt;
+  el.btnDismissError.onclick=()=>el.errorBanner.classList.add("hidden");
+  el.btnFollowup.onclick=()=>startCall({modeOverride:"followup",priorSessionId:S.sessionId});
+  el.selMode.onchange=()=>{S.mode=el.selMode.value;phases("GREETING",S.mode)};
+  el.micOrb.onclick=()=>{if(!S.inCall)startCall();else if(S.orb==="speaking")interrupt()};
+  el.selLanguage.onchange=()=>{
+    S.language=el.selLanguage.value;queue.configure({language:S.language});
+    if(S.recognizing){stopRec();if(S.orb==="listening"||S.headphones)listen()}
+    if(S.sessionId)fetch(`/api/session/${S.sessionId}/settings`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({language:S.language})}).catch(()=>{});
+  };
+  el.chkHeadphones.onchange=()=>{S.headphones=el.chkHeadphones.checked};
+  el.selTtsProvider.onchange=()=>{S.tts=el.selTtsProvider.value;queue.configure({ttsProvider:S.tts})};
+  el.btnToggleDebug.onclick=()=>el.debugBox.classList.toggle("hidden");
+  el.btnSendDebug.onclick=()=>{const t=el.txtDebugInput.value;el.txtDebugInput.value="";say(t)};
+  el.txtDebugInput.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();el.btnSendDebug.click()}};
+  addEventListener("keydown",e=>{
+    const ae=document.activeElement;
+    if(e.code!=="Space"||ae?.isContentEditable||["INPUT","SELECT","TEXTAREA"].includes(ae?.tagName))return;
+    if(S.inCall&&S.orb==="speaking"){e.preventDefault();interrupt()}
   });
 }
-
-async function consumeAgentStream(url, bodyObj) {
-  if (state.chatAbortController) {
-    state.chatAbortController.abort();
-  }
-  const controller = new AbortController();
-  state.chatAbortController = controller;
-
-  const captionId = "kam-live-" + Date.now();
-  let streamText = "";
-
-  try {
-    const resp = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(bodyObj),
-      signal: controller.signal,
-    });
-    if (!resp.ok) throw new Error(`Chat HTTP ${resp.status}`);
-
-    await readSseStream(resp, (ev, data) => {
-      if (ev === "phase") {
-        if (data.mode) state.mode = data.mode;
-        updatePhaseStrip(data.phase, data.mode || state.mode);
-        if (state.kamBrainHook?.onPhase) state.kamBrainHook.onPhase(data);
-      } else if (ev === "tool_call") {
-        if (state.kamBrainHook?.onToolCall) state.kamBrainHook.onToolCall(data);
-      } else if (ev === "tool_result") {
-        if (state.kamBrainHook?.onToolResult) state.kamBrainHook.onToolResult(data);
-      } else if (ev === "failover") {
-        if (state.kamBrainHook?.onFailover) state.kamBrainHook.onFailover(data);
-      } else if (ev === "token") {
-        if (state.firstTokenClientMs === null && state.sttEndMs) {
-          state.firstTokenClientMs = Math.round(performance.now() - state.sttEndMs);
-          if (el.latencySttToToken) el.latencySttToToken.textContent = `${state.firstTokenClientMs} ms`;
-        }
-        streamText += data.text || "";
-        appendCaption("kam", streamText, { id: captionId });
-      } else if (ev === "sentence") {
-        audioQueue.enqueueSentence(data.speakable || data.text, () => {
-          if (state.firstAudioClientMs === null && state.sttEndMs) {
-            state.firstAudioClientMs = Math.round(performance.now() - state.sttEndMs);
-            if (el.latencySttToAudio) el.latencySttToAudio.textContent = `${state.firstAudioClientMs} ms`;
-          }
-        });
-      } else if (ev === "summary_card") {
-        if (state.kamBrainHook?.onSummaryCard) state.kamBrainHook.onSummaryCard(data);
-      } else if (ev === "latency") {
-        if (el.latencyProvider && data.provider) {
-          el.latencyProvider.textContent = data.provider;
-        }
-        if (state.kamBrainHook?.onLatency) state.kamBrainHook.onLatency(data);
-      } else if (ev === "done") {
-        if (data.text) {
-          appendCaption("kam", data.text, { id: captionId });
-        }
-        updatePhaseStrip(data.phase, state.mode);
-        state.completedStreams += 1;
-        document.body.dataset.completedStreams = String(state.completedStreams);
-        if (state.kamBrainHook?.onDone) state.kamBrainHook.onDone(data);
-        // If no sentences triggered audio playback (e.g. empty), resume listening
-        if (!audioQueue.isPlaying && audioQueue.queue.length === 0 && state.inCall) {
-          audioQueue.clearLatencyFiller();
-          startListening();
-        }
-      } else if (ev === "error") {
-        audioQueue.clearLatencyFiller();
-        showError(data.message || "LLM provider error.");
-        if (state.inCall) startListening();
-      }
-    });
-  } catch (err) {
-    if (err.name !== "AbortError") {
-      audioQueue.clearLatencyFiller();
-      showError(err.message);
-      if (state.inCall) startListening();
-    }
-  } finally {
-    if (state.chatAbortController === controller) {
-      state.chatAbortController = null;
-    }
-  }
-}
-
-async function init() {
-  cacheElements();
-  setKamBrainHook(
-    createKamBrainController({
-      rootEl: el.kamBrainRoot,
-      summaryEl: el.summaryCardSection,
-      getAppState,
-    })
-  );
-  updatePhaseStrip("GREETING", el.selMode ? el.selMode.value : "inbound");
-  if (!getSpeechRecognitionCtor() && el.browserBanner) {
-    el.browserBanner.classList.remove("hidden");
-  }
-
-  // Load initial health & demo data preview
-  try {
-    const [hResp, dResp] = await Promise.all([fetch("/api/health"), fetch("/api/demo-data")]);
-    if (hResp.ok) {
-      const h = await hResp.json();
-      if (!h.active_llm_chain || h.active_llm_chain.length === 0) {
-        showError("No LLM API keys configured in .env. Add GROQ_API_KEY or GEMINI_API_KEY.");
-      }
-    }
-    if (dResp.ok && state.kamBrainHook?.onDemoData) {
-      state.kamBrainHook.onDemoData(await dResp.json());
-    }
-  } catch {
-    // ignore startup fetch errors
-  }
-
-  el.btnStartCall?.addEventListener("click", () => startCall());
-  el.btnEndCall?.addEventListener("click", () => endCall());
-  el.btnInterrupt?.addEventListener("click", () => handleInterrupt());
-  el.btnFollowup?.addEventListener("click", () => {
-    startCall({
-      modeOverride: "followup",
-      priorSessionId: state.sessionId,
-    });
-  });
-
-  el.selMode?.addEventListener("change", () => {
-    state.mode = el.selMode.value;
-    updatePhaseStrip("GREETING", state.mode);
-  });
-
-  el.micOrb?.addEventListener("click", () => {
-    if (!state.inCall) startCall();
-    else if (state.orbState === "speaking") handleInterrupt();
-  });
-
-  el.selLanguage?.addEventListener("change", async () => {
-    state.language = el.selLanguage.value;
-    audioQueue.configure({ language: state.language });
-    if (state.recognition && state.recognizing) {
-      stopRecognition();
-      if (state.orbState === "listening" || state.headphonesMode) {
-        startListening();
-      }
-    }
-    if (state.sessionId) {
-      fetch(`/api/session/${state.sessionId}/settings`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ language: state.language }),
-      }).catch(() => {});
-    }
-  });
-
-  el.chkHeadphones?.addEventListener("change", () => {
-    state.headphonesMode = el.chkHeadphones.checked;
-  });
-
-  el.selTtsProvider?.addEventListener("change", () => {
-    state.ttsProvider = el.selTtsProvider.value;
-    audioQueue.configure({ ttsProvider: state.ttsProvider });
-  });
-
-  el.btnToggleDebug?.addEventListener("click", () => {
-    el.debugBox?.classList.toggle("hidden");
-  });
-
-  el.btnSendDebug?.addEventListener("click", () => {
-    const txt = el.txtDebugInput?.value || "";
-    if (el.txtDebugInput) el.txtDebugInput.value = "";
-    sendUserUtterance(txt);
-  });
-
-  el.txtDebugInput?.addEventListener("keydown", (ev) => {
-    if (ev.key === "Enter") {
-      ev.preventDefault();
-      el.btnSendDebug?.click();
-    }
-  });
-
-  // Spacebar push-to-interrupt when not typing inside an input
-  window.addEventListener("keydown", (ev) => {
-    if (ev.code === "Space" && document.activeElement?.tagName !== "INPUT" && document.activeElement?.tagName !== "SELECT") {
-      if (state.inCall && state.orbState === "speaking") {
-        ev.preventDefault();
-        handleInterrupt();
-      }
-    }
-  });
-}
-
-window.addEventListener("DOMContentLoaded", init);
+addEventListener("DOMContentLoaded",init);
