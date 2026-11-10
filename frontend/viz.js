@@ -1,7 +1,7 @@
 // >>> CONFIG ---------------------------------------------------------------
 const USE_MIC=true;     // false skips the parallel getUserMedia analyser (listening then breathes instead)
 const BARS=84;
-const STOPS=[[0,"#ffb04d"],[.3,"#ff5aa5"],[.64,"#d23bf0"],[1,"#5b34e8"]];   // crest to base: amber, hot pink, magenta, violet
+const STOPS=[[0,"#e5c185"],[.3,"#89b093"],[.64,"#a37c95"],[1,"#6e4f62"]];   // crest to base: moth amber, sage green, dusty mauve, deep mauve
 const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 export function createVoiceViz({canvas,getState,getTts}){
@@ -62,16 +62,16 @@ export function createVoiceViz({canvas,getState,getTts}){
     const cy=Math.round(H*.6),mh=H*.5,bw=W/BARS;
     g.globalAlpha=st==="idle"?.6:1;g.globalCompositeOperation="lighter";
     const body=g.createLinearGradient(0,cy-mh,0,cy);STOPS.forEach(([o,c])=>body.addColorStop(o,c));
-    const refl=g.createLinearGradient(0,cy,0,cy+mh*.5);refl.addColorStop(0,"rgba(210,59,240,.32)");refl.addColorStop(1,"rgba(91,52,232,0)");
+    const refl=g.createLinearGradient(0,cy,0,cy+mh*.5);refl.addColorStop(0,"rgba(163,124,149,.32)");refl.addColorStop(1,"rgba(110,79,98,0)");
     const rr=(y,h,up)=>{g.beginPath();for(let i=0;i<BARS;i++){const hh=Math.max(2,lv[i]*mh*(up?1:.5)),x=i*bw+bw*.2,w=bw*.6;g.roundRect?g.roundRect(x,up?cy-hh:y,w,hh,w/2):g.rect(x,up?cy-hh:y,w,hh)}g.fill()};
-    g.shadowColor="rgba(225,75,240,.85)";g.shadowBlur=18;g.fillStyle=body;rr(0,0,true);
+    g.shadowColor="rgba(137,176,147,.85)";g.shadowBlur=18;g.fillStyle=body;rr(0,0,true);
     g.shadowBlur=0;g.fillStyle=refl;rr(cy+3,0,false);
     const line=g.createLinearGradient(0,0,W,0);   // glowing contour over the bar tops
-    line.addColorStop(0,"rgba(255,176,77,0)");line.addColorStop(.5,"rgba(255,176,77,.95)");line.addColorStop(1,"rgba(255,176,77,0)");
+    line.addColorStop(0,"rgba(229,193,133,0)");line.addColorStop(.5,"rgba(229,193,133,.95)");line.addColorStop(1,"rgba(229,193,133,0)");
     g.beginPath();for(let i=0;i<BARS;i++){const x=i*bw+bw/2,y=cy-Math.max(2,lv[i]*mh);i?g.lineTo(x,y):g.moveTo(x,y)}
-    g.strokeStyle=line;g.lineWidth=1.6;g.shadowColor="rgba(255,154,61,.9)";g.shadowBlur=14;g.stroke();
+    g.strokeStyle=line;g.lineWidth=1.6;g.shadowColor="rgba(229,193,133,.9)";g.shadowBlur=14;g.stroke();
     g.shadowBlur=0;const base=g.createLinearGradient(0,0,W,0);   // horizon line
-    base.addColorStop(0,"rgba(124,92,255,0)");base.addColorStop(.5,"rgba(255,90,165,.55)");base.addColorStop(1,"rgba(124,92,255,0)");
+    base.addColorStop(0,"rgba(163,124,149,0)");base.addColorStop(.5,"rgba(137,176,147,.55)");base.addColorStop(1,"rgba(163,124,149,0)");
     g.fillStyle=base;g.fillRect(0,cy,W,1);g.globalAlpha=1;g.globalCompositeOperation="source-over";
   }
 
