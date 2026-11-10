@@ -7,8 +7,11 @@ from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Literal
 
 
+ReasonCode = Literal["rate_limited", "forbidden", "timeout", "server_error"]
+
+
 class ProviderRateLimitOrTransientError(Exception):
-    """Raised on 429, 5xx, timeout, decommissioned model, or network error to trigger failover."""
+    """Raised on 429, 403, 5xx, timeout, decommissioned model, or network error to trigger failover."""
 
     def __init__(
         self,
@@ -16,11 +19,24 @@ class ProviderRateLimitOrTransientError(Exception):
         status_code: int | None = None,
         retry_after_seconds: float | None = None,
         is_rate_limit: bool = False,
+        is_forbidden: bool = False,
+        reason_code: ReasonCode | None = None,
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.retry_after_seconds = retry_after_seconds
         self.is_rate_limit = is_rate_limit
+        self.is_forbidden = is_forbidden or status_code == 403
+        if reason_code is not None:
+            self.reason_code: ReasonCode = reason_code
+        elif self.is_forbidden:
+            self.reason_code = "forbidden"
+        elif is_rate_limit or status_code == 429:
+            self.reason_code = "rate_limited"
+        elif status_code in (408, 504) or "timed out" in message.lower() or "timeout" in message.lower():
+            self.reason_code = "timeout"
+        else:
+            self.reason_code = "server_error"
 
 
 class ProviderConfigError(Exception):

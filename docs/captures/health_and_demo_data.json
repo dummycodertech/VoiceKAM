@@ -1,0 +1,941 @@
+{
+  "health": {
+    "status_code": 200,
+    "headers": {
+      "date": "Tue, 10 Nov 2026 11:08:35 GMT",
+      "server": "uvicorn",
+      "content-length": "1365",
+      "content-type": "application/json",
+      "vary": "Origin"
+    },
+    "response": {
+      "status": "ok",
+      "prototype_notice": "Prototype - Mock Data Only",
+      "providers_configured": {
+        "groq": true,
+        "gemini": true,
+        "openrouter": false,
+        "mock": false
+      },
+      "active_llm_chain": [
+        "groq:openai/gpt-oss-20b",
+        "groq:openai/gpt-oss-120b",
+        "groq:qwen/qwen3.8-27b",
+        "gemini:gemini-3.5-flash-lite",
+        "gemini:gemini-3.6-flash"
+      ],
+      "llm_startup_smoke": [
+        {
+          "provider": "groq",
+          "model": "openai/gpt-oss-20b",
+          "smoke_ok": true,
+          "tool_called": true,
+          "latency_ms": 496,
+          "error": null
+        },
+        {
+          "provider": "gemini",
+          "model": "gemini-3.5-flash-lite",
+          "smoke_ok": true,
+          "tool_called": true,
+          "latency_ms": 2421,
+          "error": null
+        }
+      ],
+      "tts_config": {
+        "provider": "auto",
+        "voice_en": "en-IN-NeerjaNeural",
+        "voice_hi": "hi-IN-SwaraNeural",
+        "active_gemini_tts_model": null,
+        "gemini_tts_smoke": [
+          {
+            "model": "gemini-3.8-flash-tts",
+            "smoke_ok": false,
+            "bytes": 0,
+            "latency_ms": 472,
+            "error": "400 INVALID_ARGUMENT. {'error': {'code': 400, 'message': 'Invalid JSON payload received. Unknown name \"speechConfig\" at \\'generation_config\\': Cannot find field.', 'status': 'INVALID_ARGUMENT', 'detai"
+          },
+          {
+            "model": "gemini-2.5-flash-preview-tts",
+            "smoke_ok": false,
+            "bytes": 0,
+            "latency_ms": 445,
+            "error": "400 INVALID_ARGUMENT. {'error': {'code': 400, 'message': 'Invalid JSON payload received. Unknown name \"speechConfig\" at \\'generation_config\\': Cannot find field.', 'status': 'INVALID_ARGUMENT', 'detai"
+          }
+        ]
+      },
+      "features": {
+        "enable_gemini_live": false,
+        "whisper_stt_fallback": true
+      }
+    }
+  },
+  "demo_data_current": {
+    "status_code": 200,
+    "response": {
+      "overview": {
+        "seller": {
+          "seller_id": "MOCK-DL-4821",
+          "seller_name": "Rajesh Kumar",
+          "salutation": "Rajesh ji",
+          "shop_name": "Kumar Home & Kitchen",
+          "city": "Delhi",
+          "category": "Home & Kitchen",
+          "active_catalog_size": 60,
+          "tenure_months": 30,
+          "prototype_notice": "Prototype - Mock Data Only"
+        },
+        "snapshot": "current",
+        "headline_summary": {
+          "sales_last_month": 200000,
+          "sales_this_month": 135000,
+          "sales_drop_pct": 32.5,
+          "orders_last_month": 400,
+          "orders_this_month": 270,
+          "orders_drop": 130,
+          "asp": 500,
+          "oos_last_month": 5,
+          "oos_this_month": 18,
+          "cancellation_rate_last_month_pct": 8.0,
+          "cancellation_rate_this_month_pct": 14.0
+        },
+        "followup_metrics": null
+      },
+      "metrics": {
+        "snapshot": "current",
+        "baseline_label": "Last Month",
+        "current_label": "This Month",
+        "metrics": {
+          "sales_gmv": {
+            "label": "Total Sales (Placed GMV)",
+            "unit": "INR",
+            "baseline": 200000,
+            "current": 135000,
+            "delta": -65000,
+            "delta_pct": -32.5
+          },
+          "orders": {
+            "label": "Total Orders Placed",
+            "unit": "orders",
+            "baseline": 400,
+            "current": 270,
+            "delta": -130,
+            "delta_pct": -32.5
+          },
+          "asp": {
+            "label": "Average Selling Price (ASP)",
+            "unit": "INR",
+            "baseline": 500,
+            "current": 500,
+            "delta": 0,
+            "delta_pct": 0.0
+          },
+          "cancellation_rate_pct": {
+            "label": "Cancellation Rate",
+            "unit": "%",
+            "baseline": 8.0,
+            "current": 14.0,
+            "baseline_count": 32,
+            "current_count": 38,
+            "delta_pp": 6.0
+          },
+          "out_of_stock_skus": {
+            "label": "Out-of-Stock Products",
+            "unit": "products",
+            "baseline": 5,
+            "current": 18,
+            "delta": 13,
+            "newly_oos": 13
+          }
+        },
+        "volume_vs_price_finding": "Average Selling Price stayed flat at Rs 500 -> Rs 500, proving the 32.5% sales drop is purely a VOLUME problem (130 fewer orders), not a ticket-size problem."
+      },
+      "diagnosis": {
+        "snapshot": "current",
+        "problem_type": "volume_driven_decline",
+        "total_lost_orders": 130,
+        "total_lost_revenue": 65000,
+        "asp_flat": true,
+        "drivers": [
+          {
+            "rank": 1,
+            "driver": "stock_outs",
+            "title": "Out-of-Stock Top Sellers",
+            "lost_orders": 78,
+            "lost_revenue": 39000,
+            "share_pct": 60.0,
+            "evidence": "Out-of-stock products jumped from 5 to 18 (+13 new). Top 5 newly OOS products alone lost 68 orders."
+          },
+          {
+            "rank": 2,
+            "driver": "pricing_gaps",
+            "title": "Competitor Price Gaps on Top SKUs",
+            "lost_orders": 26,
+            "lost_revenue": 13000,
+            "share_pct": 20.0,
+            "evidence": "3 active high-volume products (Electric Kettle, Dish Rack, Spatula Set) are priced 6.9% to 8.3% higher than the lowest marketplace price."
+          },
+          {
+            "rank": 3,
+            "driver": "cancellations_visibility",
+            "title": "Cancellations & Search Visibility Drag",
+            "lost_orders": 26,
+            "lost_revenue": 13000,
+            "share_pct": 20.0,
+            "evidence": "Cancellation rate spiked from 8.0% to 14.0% (seller stock-unavailable 6 -> 14, dispatch SLA 5 -> 9), and search impressions dipped 14.0% as OOS listings lost rank."
+          }
+        ],
+        "already_answered_questions": [
+          "Was average order value / ASP lower? No, ASP stayed flat at Rs 500.",
+          "Was buyer cancellation driving the spike? No, buyer-initiated cancellation rate stayed flat at ~4%; seller-side stock and dispatch SLA drove it.",
+          "Are all products down equally? No, 60% of the drop is concentrated in newly out-of-stock products."
+        ],
+        "assumptions": [
+          "Orders = placed orders; Sales = placed GMV (Orders x SKU Price).",
+          "Cancellation rate = cancelled orders / placed orders.",
+          "Causal attributions and recovery estimates are indicative mock model estimates, not guarantees."
+        ]
+      },
+      "oos_skus": {
+        "snapshot": "current",
+        "total_oos_count": 18,
+        "newly_oos_count": 13,
+        "chronic_oos_count": 5,
+        "total_oos_lost_orders": 78,
+        "total_oos_lost_revenue": 39000,
+        "top_oos_skus": [
+          {
+            "sku_id": "HK-006",
+            "name": "Stainless Steel Pressure Cooker 5L",
+            "category": "Cookware",
+            "price": 800,
+            "last_month_orders": 22,
+            "this_month_orders": 6,
+            "lost_orders": 16,
+            "lost_revenue_month": 12800,
+            "estimated_lost_rev_per_day": 587,
+            "days_oos_this_month": 20,
+            "newly_oos": true
+          },
+          {
+            "sku_id": "HK-008",
+            "name": "Insulated Steel Casserole Set 3Pc",
+            "category": "Dining",
+            "price": 600,
+            "last_month_orders": 19,
+            "this_month_orders": 5,
+            "lost_orders": 14,
+            "lost_revenue_month": 8400,
+            "estimated_lost_rev_per_day": 380,
+            "days_oos_this_month": 19,
+            "newly_oos": true
+          },
+          {
+            "sku_id": "HK-007",
+            "name": "Non-Stick Granite Tawa 28cm",
+            "category": "Cookware",
+            "price": 500,
+            "last_month_orders": 20,
+            "this_month_orders": 5,
+            "lost_orders": 15,
+            "lost_revenue_month": 7500,
+            "estimated_lost_rev_per_day": 333,
+            "days_oos_this_month": 21,
+            "newly_oos": true
+          },
+          {
+            "sku_id": "HK-009",
+            "name": "Airtight Kitchen Storage Jars 12Pc",
+            "category": "Storage",
+            "price": 400,
+            "last_month_orders": 17,
+            "this_month_orders": 5,
+            "lost_orders": 12,
+            "lost_revenue_month": 4800,
+            "estimated_lost_rev_per_day": 227,
+            "days_oos_this_month": 18,
+            "newly_oos": true
+          },
+          {
+            "sku_id": "HK-010",
+            "name": "Hard Anodized Tadka Pan & Ladle",
+            "category": "Cookware",
+            "price": 250,
+            "last_month_orders": 15,
+            "this_month_orders": 4,
+            "lost_orders": 11,
+            "lost_revenue_month": 2750,
+            "estimated_lost_rev_per_day": 125,
+            "days_oos_this_month": 19,
+            "newly_oos": true
+          }
+        ]
+      },
+      "cancellations": {
+        "snapshot": "current",
+        "baseline_cancellation_rate_pct": 8.0,
+        "current_cancellation_rate_pct": 14.0,
+        "baseline_cancelled_orders": 32,
+        "current_cancelled_orders": 38,
+        "reasons": [
+          {
+            "reason_key": "seller_stock_unavailable",
+            "label": "Seller cancelled - stock unavailable",
+            "last_month_count": 6,
+            "this_month_count": 14,
+            "delta_count": 8,
+            "last_month_rate_pct": 1.5,
+            "this_month_rate_pct": 5.19
+          },
+          {
+            "reason_key": "dispatch_sla_breach",
+            "label": "Auto-cancelled - dispatch SLA delay",
+            "last_month_count": 5,
+            "this_month_count": 9,
+            "delta_count": 4,
+            "last_month_rate_pct": 1.25,
+            "this_month_rate_pct": 3.33
+          },
+          {
+            "reason_key": "buyer_initiated",
+            "label": "Buyer initiated cancellation",
+            "last_month_count": 15,
+            "this_month_count": 11,
+            "delta_count": -4,
+            "last_month_rate_pct": 3.75,
+            "this_month_rate_pct": 4.07
+          },
+          {
+            "reason_key": "courier_address_issue",
+            "label": "Courier / address / COD issue",
+            "last_month_count": 6,
+            "this_month_count": 4,
+            "delta_count": -2,
+            "last_month_rate_pct": 1.5,
+            "this_month_rate_pct": 1.48
+          }
+        ],
+        "key_insight": "Seller-side stock-unavailable cancellations more than doubled (6 -> 14, from 1.5% to 5.2% of orders) and dispatch-SLA auto-cancellations rose (5 -> 9), while buyer-initiated cancellation rate remained flat (~4%)."
+      },
+      "pricing": {
+        "snapshot": "current",
+        "overpriced_sku_count": 3,
+        "total_pricing_lost_orders": 26,
+        "total_pricing_lost_revenue": 13000,
+        "pricing_gaps": [
+          {
+            "sku_id": "HK-019",
+            "name": "Electric Kettle 1.5L Double Wall",
+            "seller_price": 700,
+            "competitor_lowest_price": 655,
+            "price_gap_rs": 45,
+            "price_gap_pct": 6.9,
+            "last_month_orders": 22,
+            "this_month_orders": 14,
+            "lost_orders": 8,
+            "lost_revenue": 5600,
+            "suggested_price": 659
+          },
+          {
+            "sku_id": "HK-020",
+            "name": "3-Tier Modular Dish Drying Rack",
+            "seller_price": 500,
+            "competitor_lowest_price": 465,
+            "price_gap_rs": 35,
+            "price_gap_pct": 7.5,
+            "last_month_orders": 24,
+            "this_month_orders": 14,
+            "lost_orders": 10,
+            "lost_revenue": 5000,
+            "suggested_price": 469
+          },
+          {
+            "sku_id": "HK-021",
+            "name": "Silicone Non-Stick Spatula Set 5Pc",
+            "seller_price": 300,
+            "competitor_lowest_price": 277,
+            "price_gap_rs": 23,
+            "price_gap_pct": 8.3,
+            "last_month_orders": 18,
+            "this_month_orders": 10,
+            "lost_orders": 8,
+            "lost_revenue": 2400,
+            "suggested_price": 281
+          }
+        ],
+        "key_insight": "3 active top-selling products are priced 6.9% to 8.3% above the lowest marketplace offer, causing 26 lost orders (Rs 13,000) without affecting overall store ASP."
+      },
+      "funnel": {
+        "snapshot": "current",
+        "last_month": {
+          "impressions": 80000,
+          "clicks": 3200,
+          "orders": 400,
+          "ctr_pct": 4.0,
+          "cvr_pct": 12.5
+        },
+        "this_month": {
+          "impressions": 68800,
+          "clicks": 2477,
+          "orders": 270,
+          "ctr_pct": 3.6,
+          "cvr_pct": 10.9
+        },
+        "changes": {
+          "impressions_pct": -14.0,
+          "clicks_pct": -22.6,
+          "orders_pct": -32.5,
+          "ctr_delta_pp": -0.4,
+          "cvr_delta_pp": -1.6
+        },
+        "key_insight": "Impressions fell 14.0% (80,000 -> 68,800) primarily because 18 out-of-stock listings dropped out of search ranking, while conversion fell 1.6 percentage points (12.5% -> 10.9%) due to pricing gaps and stock unavailability."
+      },
+      "action_plan": {
+        "snapshot": "current",
+        "actions": [
+          {
+            "action_id": "ACT-1",
+            "priority": 1,
+            "title": "Restock top 5 high-velocity OOS products and enable low-stock alerts",
+            "owner": "Rajesh Kumar",
+            "effort": "Medium",
+            "impact": "Very High (~60% of drop)",
+            "target_skus": [
+              "HK-006",
+              "HK-007",
+              "HK-008",
+              "HK-009",
+              "HK-010"
+            ],
+            "estimated_recovery_range_rs": "Rs 28,000 - Rs 36,000/month",
+            "recommended_due": "Within 48 hours",
+            "details": "Prioritize Pressure Cooker 5L (HK-006), Granite Tawa (HK-007), Casserole Set (HK-008), Storage Jars (HK-009), and Tadka Pan (HK-010), and set reorder alerts at 10 units."
+          },
+          {
+            "action_id": "ACT-2",
+            "priority": 2,
+            "title": "Fix daily inventory sync & dispatch before SLA cutoff to cut cancellations below 10%",
+            "owner": "Rajesh Kumar",
+            "effort": "Low",
+            "impact": "High (~20% of drop + search rank protection)",
+            "target_skus": [
+              "Storewide Stock Sync",
+              "Dispatch Queue"
+            ],
+            "estimated_recovery_range_rs": "Rs 10,000 - Rs 14,000/month",
+            "recommended_due": "Starting today",
+            "details": "Update stock buffer twice daily to stop stock-unavailable cancellations (currently 14/month) and clear ready-to-ship orders before 2 PM to avoid auto-cancellations (currently 9/month)."
+          },
+          {
+            "action_id": "ACT-3",
+            "priority": 3,
+            "title": "Reprice 3 overpriced bestsellers within 2% of lowest offer (or run a promo/ads boost)",
+            "owner": "Rajesh Kumar",
+            "effort": "Low",
+            "impact": "Medium-High (~20% of drop)",
+            "target_skus": [
+              "HK-019",
+              "HK-020",
+              "HK-021"
+            ],
+            "estimated_recovery_range_rs": "Rs 9,000 - Rs 13,000/month",
+            "recommended_due": "Within 3 days",
+            "details": "Adjust Electric Kettle (Rs 700 -> ~Rs 659), Dish Rack (Rs 500 -> ~Rs 469), and Spatula Set (Rs 300 -> ~Rs 280), or run an optional limited-time promotion or ads campaign, subject to eligibility."
+          }
+        ],
+        "estimated_combined_recovery_rs": "Rs 47,000 - Rs 63,000/month (indicative range)",
+        "assumptions": "Indicative recovery ranges assume normal marketplace demand, restored search rank within 3-5 days of restocking, and competitive fulfillment SLAs. Not a guaranteed outcome."
+      }
+    }
+  },
+  "demo_data_followup": {
+    "status_code": 200,
+    "response": {
+      "overview": {
+        "seller": {
+          "seller_id": "MOCK-DL-4821",
+          "seller_name": "Rajesh Kumar",
+          "salutation": "Rajesh ji",
+          "shop_name": "Kumar Home & Kitchen",
+          "city": "Delhi",
+          "category": "Home & Kitchen",
+          "active_catalog_size": 60,
+          "tenure_months": 30,
+          "prototype_notice": "Prototype - Mock Data Only"
+        },
+        "snapshot": "followup",
+        "headline_summary": {
+          "sales_last_month": 200000,
+          "sales_this_month": 135000,
+          "sales_drop_pct": 32.5,
+          "orders_last_month": 400,
+          "orders_this_month": 270,
+          "orders_drop": 130,
+          "asp": 500,
+          "oos_last_month": 5,
+          "oos_this_month": 18,
+          "cancellation_rate_last_month_pct": 8.0,
+          "cancellation_rate_this_month_pct": 14.0
+        },
+        "followup_metrics": {
+          "sales_gmv_pace": 175500,
+          "sales_vs_crisis_pct": 30.0,
+          "orders_pace": 351,
+          "orders_vs_crisis_pct": 30.0,
+          "asp": 500,
+          "out_of_stock_skus": 9,
+          "oos_target_max": 8,
+          "cancellation_rate_pct": 10.5,
+          "cancellation_target_max": 10.0,
+          "impressions_daily_pace": 2610
+        }
+      },
+      "metrics": {
+        "snapshot": "followup",
+        "baseline_label": "Last Month",
+        "current_label": "This Month",
+        "metrics": {
+          "sales_gmv": {
+            "label": "Total Sales (Placed GMV)",
+            "unit": "INR",
+            "baseline": 200000,
+            "current": 135000,
+            "delta": -65000,
+            "delta_pct": -32.5
+          },
+          "orders": {
+            "label": "Total Orders Placed",
+            "unit": "orders",
+            "baseline": 400,
+            "current": 270,
+            "delta": -130,
+            "delta_pct": -32.5
+          },
+          "asp": {
+            "label": "Average Selling Price (ASP)",
+            "unit": "INR",
+            "baseline": 500,
+            "current": 500,
+            "delta": 0,
+            "delta_pct": 0.0
+          },
+          "cancellation_rate_pct": {
+            "label": "Cancellation Rate",
+            "unit": "%",
+            "baseline": 8.0,
+            "current": 14.0,
+            "baseline_count": 32,
+            "current_count": 38,
+            "delta_pp": 6.0
+          },
+          "out_of_stock_skus": {
+            "label": "Out-of-Stock Products",
+            "unit": "products",
+            "baseline": 5,
+            "current": 18,
+            "delta": 13,
+            "newly_oos": 13
+          }
+        },
+        "volume_vs_price_finding": "Average Selling Price stayed flat at Rs 500 -> Rs 500, proving the 32.5% sales drop is purely a VOLUME problem (130 fewer orders), not a ticket-size problem.",
+        "followup_label": "3 Days Later (Follow-up Review)",
+        "followup": {
+          "sales_gmv_pace": 175500,
+          "sales_vs_crisis_pct": 30.0,
+          "orders_pace": 351,
+          "orders_vs_crisis_pct": 30.0,
+          "asp": 500,
+          "out_of_stock_skus": 9,
+          "oos_target_max": 8,
+          "cancellation_rate_pct": 10.5,
+          "cancellation_target_max": 10.0,
+          "impressions_daily_pace": 2610
+        }
+      },
+      "diagnosis": {
+        "snapshot": "followup",
+        "problem_type": "volume_driven_decline",
+        "total_lost_orders": 130,
+        "total_lost_revenue": 65000,
+        "asp_flat": true,
+        "drivers": [
+          {
+            "rank": 1,
+            "driver": "stock_outs",
+            "title": "Out-of-Stock Top Sellers",
+            "lost_orders": 78,
+            "lost_revenue": 39000,
+            "share_pct": 60.0,
+            "evidence": "Out-of-stock products jumped from 5 to 18 (+13 new). Top 5 newly OOS products alone lost 68 orders."
+          },
+          {
+            "rank": 2,
+            "driver": "pricing_gaps",
+            "title": "Competitor Price Gaps on Top SKUs",
+            "lost_orders": 26,
+            "lost_revenue": 13000,
+            "share_pct": 20.0,
+            "evidence": "3 active high-volume products (Electric Kettle, Dish Rack, Spatula Set) are priced 6.9% to 8.3% higher than the lowest marketplace price."
+          },
+          {
+            "rank": 3,
+            "driver": "cancellations_visibility",
+            "title": "Cancellations & Search Visibility Drag",
+            "lost_orders": 26,
+            "lost_revenue": 13000,
+            "share_pct": 20.0,
+            "evidence": "Cancellation rate spiked from 8.0% to 14.0% (seller stock-unavailable 6 -> 14, dispatch SLA 5 -> 9), and search impressions dipped 14.0% as OOS listings lost rank."
+          }
+        ],
+        "already_answered_questions": [
+          "Was average order value / ASP lower? No, ASP stayed flat at Rs 500.",
+          "Was buyer cancellation driving the spike? No, buyer-initiated cancellation rate stayed flat at ~4%; seller-side stock and dispatch SLA drove it.",
+          "Are all products down equally? No, 60% of the drop is concentrated in newly out-of-stock products."
+        ],
+        "assumptions": [
+          "Orders = placed orders; Sales = placed GMV (Orders x SKU Price).",
+          "Cancellation rate = cancelled orders / placed orders.",
+          "Causal attributions and recovery estimates are indicative mock model estimates, not guarantees."
+        ],
+        "followup_comparison": {
+          "days_elapsed": 3,
+          "prior_commitments": [
+            {
+              "action_id": "ACT-1",
+              "action": "Restock top 5 out-of-stock products and enable low-stock alerts",
+              "owner": "Rajesh Kumar",
+              "due_date": "Within 48 hours",
+              "status": "partially_done",
+              "progress_note": "4 of top 5 restocked (HK-006, HK-007, HK-008, HK-010). HK-009 still out of stock awaiting supplier; total OOS down from 18 to 9 (target <= 8)."
+            },
+            {
+              "action_id": "ACT-2",
+              "action": "Sync warehouse stock twice daily and clear morning dispatch before 2 PM cutoff",
+              "owner": "Rajesh Kumar",
+              "due_date": "Daily",
+              "status": "partially_done",
+              "progress_note": "Stock-unavailable cancellations fell sharply, bringing total cancellation rate from 14% to 10.5% (just shy of <= 10% target due to 2 dispatch delays)."
+            },
+            {
+              "action_id": "ACT-3",
+              "action": "Match competitor pricing within 2% on 3 overpriced products",
+              "owner": "Rajesh Kumar",
+              "due_date": "Within 3 days",
+              "status": "partially_done",
+              "progress_note": "Repriced Kettle (HK-019) and Dish Rack (HK-020); Spatula Set (HK-021) is still 8.3% above competitor."
+            }
+          ],
+          "metrics": {
+            "projected_monthly_sales": 175500,
+            "projected_monthly_orders": 351,
+            "asp": 500,
+            "out_of_stock_skus": 9,
+            "cancellation_rate_pct": 10.5,
+            "seller_stock_cancel_rate_pct": 1.4,
+            "dispatch_sla_cancel_rate_pct": 3.6,
+            "impressions_daily_pace": 2610
+          },
+          "targets": {
+            "out_of_stock_skus_max": 8,
+            "cancellation_rate_pct_max": 10.0,
+            "monthly_sales_pace_target": 180000
+          }
+        }
+      },
+      "oos_skus": {
+        "snapshot": "followup",
+        "total_oos_count": 9,
+        "newly_oos_count": 9,
+        "chronic_oos_count": 5,
+        "total_oos_lost_orders": 78,
+        "total_oos_lost_revenue": 39000,
+        "top_oos_skus": [
+          {
+            "sku_id": "HK-009",
+            "name": "Airtight Kitchen Storage Jars 12Pc",
+            "category": "Storage",
+            "price": 400,
+            "last_month_orders": 17,
+            "this_month_orders": 5,
+            "lost_orders": 12,
+            "lost_revenue_month": 4800,
+            "estimated_lost_rev_per_day": 227,
+            "days_oos_this_month": 18,
+            "newly_oos": true
+          },
+          {
+            "sku_id": "HK-016",
+            "name": "Ceramic Coffee Mug Set 4Pc",
+            "category": "Dining",
+            "price": 300,
+            "last_month_orders": 3,
+            "this_month_orders": 1,
+            "lost_orders": 2,
+            "lost_revenue_month": 600,
+            "estimated_lost_rev_per_day": 30,
+            "days_oos_this_month": 18,
+            "newly_oos": true
+          },
+          {
+            "sku_id": "HK-017",
+            "name": "Melamine Serving Tray Pair",
+            "category": "Dining",
+            "price": 300,
+            "last_month_orders": 3,
+            "this_month_orders": 1,
+            "lost_orders": 2,
+            "lost_revenue_month": 600,
+            "estimated_lost_rev_per_day": 30,
+            "days_oos_this_month": 17,
+            "newly_oos": true
+          },
+          {
+            "sku_id": "HK-018",
+            "name": "Wall Mounted Knife & Spoon Holder",
+            "category": "Storage",
+            "price": 300,
+            "last_month_orders": 2,
+            "this_month_orders": 1,
+            "lost_orders": 1,
+            "lost_revenue_month": 300,
+            "estimated_lost_rev_per_day": 20,
+            "days_oos_this_month": 14,
+            "newly_oos": true
+          },
+          {
+            "sku_id": "HK-011",
+            "name": "Steel Tea Strainer Twin Pack",
+            "category": "Kitchen Tools",
+            "price": 250,
+            "last_month_orders": 2,
+            "this_month_orders": 1,
+            "lost_orders": 1,
+            "lost_revenue_month": 250,
+            "estimated_lost_rev_per_day": 17,
+            "days_oos_this_month": 14,
+            "newly_oos": true
+          }
+        ],
+        "recently_restocked": [
+          "HK-006 (Stainless Steel Pressure Cooker 5L)",
+          "HK-007 (Non-Stick Granite Tawa 28cm)",
+          "HK-008 (Insulated Steel Casserole Set 3Pc)",
+          "HK-010 (Hard Anodized Tadka Pan & Ladle)"
+        ],
+        "remaining_priority_blocker": {
+          "sku_id": "HK-009",
+          "name": "Airtight Kitchen Storage Jars 12Pc",
+          "price": 400,
+          "estimated_daily_loss": 227,
+          "blocker": "Supplier shipment delayed by 2 days"
+        }
+      },
+      "cancellations": {
+        "snapshot": "followup",
+        "baseline_cancellation_rate_pct": 8.0,
+        "current_cancellation_rate_pct": 14.0,
+        "baseline_cancelled_orders": 32,
+        "current_cancelled_orders": 38,
+        "reasons": [
+          {
+            "reason_key": "seller_stock_unavailable",
+            "label": "Seller cancelled - stock unavailable",
+            "last_month_count": 6,
+            "this_month_count": 14,
+            "delta_count": 8,
+            "last_month_rate_pct": 1.5,
+            "this_month_rate_pct": 5.19
+          },
+          {
+            "reason_key": "dispatch_sla_breach",
+            "label": "Auto-cancelled - dispatch SLA delay",
+            "last_month_count": 5,
+            "this_month_count": 9,
+            "delta_count": 4,
+            "last_month_rate_pct": 1.25,
+            "this_month_rate_pct": 3.33
+          },
+          {
+            "reason_key": "buyer_initiated",
+            "label": "Buyer initiated cancellation",
+            "last_month_count": 15,
+            "this_month_count": 11,
+            "delta_count": -4,
+            "last_month_rate_pct": 3.75,
+            "this_month_rate_pct": 4.07
+          },
+          {
+            "reason_key": "courier_address_issue",
+            "label": "Courier / address / COD issue",
+            "last_month_count": 6,
+            "this_month_count": 4,
+            "delta_count": -2,
+            "last_month_rate_pct": 1.5,
+            "this_month_rate_pct": 1.48
+          }
+        ],
+        "key_insight": "Seller-side stock-unavailable cancellations more than doubled (6 -> 14, from 1.5% to 5.2% of orders) and dispatch-SLA auto-cancellations rose (5 -> 9), while buyer-initiated cancellation rate remained flat (~4%).",
+        "followup_cancellation_rate_pct": 10.5,
+        "followup_seller_stock_cancel_rate_pct": 1.4,
+        "followup_dispatch_sla_cancel_rate_pct": 3.6,
+        "followup_note": "Stock-unavailable cancellations fell sharply after syncing inventory, bringing overall rate from 14.0% down to 10.5% (close to the 10.0% target); dispatch SLA delays remain the main gap."
+      },
+      "pricing": {
+        "snapshot": "followup",
+        "overpriced_sku_count": 1,
+        "total_pricing_lost_orders": 26,
+        "total_pricing_lost_revenue": 13000,
+        "pricing_gaps": [
+          {
+            "sku_id": "HK-019",
+            "name": "Electric Kettle 1.5L Double Wall",
+            "seller_price": 700,
+            "competitor_lowest_price": 655,
+            "price_gap_rs": 45,
+            "price_gap_pct": 6.9,
+            "last_month_orders": 22,
+            "this_month_orders": 14,
+            "lost_orders": 8,
+            "lost_revenue": 5600,
+            "suggested_price": 659
+          },
+          {
+            "sku_id": "HK-020",
+            "name": "3-Tier Modular Dish Drying Rack",
+            "seller_price": 500,
+            "competitor_lowest_price": 465,
+            "price_gap_rs": 35,
+            "price_gap_pct": 7.5,
+            "last_month_orders": 24,
+            "this_month_orders": 14,
+            "lost_orders": 10,
+            "lost_revenue": 5000,
+            "suggested_price": 469
+          },
+          {
+            "sku_id": "HK-021",
+            "name": "Silicone Non-Stick Spatula Set 5Pc",
+            "seller_price": 300,
+            "competitor_lowest_price": 277,
+            "price_gap_rs": 23,
+            "price_gap_pct": 8.3,
+            "last_month_orders": 18,
+            "this_month_orders": 10,
+            "lost_orders": 8,
+            "lost_revenue": 2400,
+            "suggested_price": 281
+          }
+        ],
+        "key_insight": "3 active top-selling products are priced 6.9% to 8.3% above the lowest marketplace offer, causing 26 lost orders (Rs 13,000) without affecting overall store ASP.",
+        "repriced_skus": [
+          {
+            "sku_id": "HK-019",
+            "name": "Electric Kettle 1.5L Double Wall",
+            "old_price": 700,
+            "new_price": 659,
+            "competitor_lowest": 655
+          },
+          {
+            "sku_id": "HK-020",
+            "name": "3-Tier Modular Dish Drying Rack",
+            "old_price": 500,
+            "new_price": 469,
+            "competitor_lowest": 465
+          }
+        ],
+        "remaining_overpriced_sku": {
+          "sku_id": "HK-021",
+          "name": "Silicone Non-Stick Spatula Set 5Pc",
+          "current_price": 300,
+          "competitor_lowest": 277,
+          "gap_pct": 8.3
+        }
+      },
+      "funnel": {
+        "snapshot": "followup",
+        "last_month": {
+          "impressions": 80000,
+          "clicks": 3200,
+          "orders": 400,
+          "ctr_pct": 4.0,
+          "cvr_pct": 12.5
+        },
+        "this_month": {
+          "impressions": 68800,
+          "clicks": 2477,
+          "orders": 270,
+          "ctr_pct": 3.6,
+          "cvr_pct": 10.9
+        },
+        "changes": {
+          "impressions_pct": -14.0,
+          "clicks_pct": -22.6,
+          "orders_pct": -32.5,
+          "ctr_delta_pp": -0.4,
+          "cvr_delta_pp": -1.6
+        },
+        "key_insight": "Impressions fell 14.0% (80,000 -> 68,800) primarily because 18 out-of-stock listings dropped out of search ranking, while conversion fell 1.6 percentage points (12.5% -> 10.9%) due to pricing gaps and stock unavailability.",
+        "followup_impressions_daily_pace": 2610
+      },
+      "action_plan": {
+        "snapshot": "followup",
+        "actions": [
+          {
+            "action_id": "ACT-FU-1",
+            "priority": 1,
+            "title": "Expedite HK-009 (Airtight Storage Jars) restock or temporary alternate pack",
+            "owner": "Rajesh Kumar",
+            "effort": "Low-Medium",
+            "impact": "High",
+            "target_skus": [
+              "HK-009"
+            ],
+            "estimated_recovery_range_rs": "Rs 6,000 - Rs 7,500/month",
+            "recommended_due": "Within 48 hours",
+            "details": "4 of top 5 OOS products are back in stock (OOS down 18 -> 9). Restocking HK-009 brings OOS to 8 or below, hitting the target threshold."
+          },
+          {
+            "action_id": "ACT-FU-2",
+            "priority": 2,
+            "title": "Lock 2 PM daily manifest cutoff to push cancellation rate under 10%",
+            "owner": "Rajesh Kumar",
+            "effort": "Low",
+            "impact": "Medium-High",
+            "target_skus": [
+              "Warehouse Dispatch Queue"
+            ],
+            "estimated_recovery_range_rs": "Rs 4,000 - Rs 6,000/month",
+            "recommended_due": "Starting tomorrow",
+            "details": "Stock-unavailable cancellations fell sharply, moving overall rate from 14.0% to 10.5%. Eliminating the remaining dispatch SLA delays gets below the 10.0% target."
+          },
+          {
+            "action_id": "ACT-FU-3",
+            "priority": 3,
+            "title": "Reprice HK-021 (Silicone Spatula Set) from Rs 300 to Rs 280 and consider visibility boost",
+            "owner": "Rajesh Kumar",
+            "effort": "Low",
+            "impact": "Medium",
+            "target_skus": [
+              "HK-021"
+            ],
+            "estimated_recovery_range_rs": "Rs 2,000 - Rs 3,000/month",
+            "recommended_due": "Today",
+            "details": "HK-019 and HK-020 are already repriced. Matching HK-021 closer to Rs 277 closes the last price gap; you can also explore a promotional offer or ads campaign, subject to eligibility."
+          }
+        ],
+        "estimated_combined_recovery_rs": "Rs 12,000 - Rs 16,500 additional monthly pace",
+        "assumptions": "Indicative recovery ranges assume normal marketplace demand, restored search rank within 3-5 days of restocking, and competitive fulfillment SLAs. Not a guaranteed outcome."
+      }
+    }
+  },
+  "tts_probe": {
+    "status_code": 200,
+    "response": {
+      "edge_tts_ok": true,
+      "voice": "en-IN-NeerjaNeural",
+      "bytes": 27504,
+      "latency_ms": 1111,
+      "recommended_tts_mode": "edge-tts"
+    }
+  }
+}

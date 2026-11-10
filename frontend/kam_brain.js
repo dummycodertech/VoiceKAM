@@ -158,7 +158,8 @@ export function createKamBrainController({
         curr: fmtInr(m.sales_gmv.current),
         delta: `${m.sales_gmv.delta_pct}%`,
         deltaClass: "bad",
-        fuVal: fu ? `${fmtInr(fu.sales_gmv_pace)} (+${fu.sales_vs_crisis_pct}%)` : "",
+        fuPrimary: fu ? fmtInr(fu.sales_gmv_pace) : "",
+        fuSub: fu ? `+${fu.sales_vs_crisis_pct}% pace` : "",
       },
       {
         label: "Orders Placed",
@@ -166,7 +167,8 @@ export function createKamBrainController({
         curr: String(m.orders.current),
         delta: `${m.orders.delta} (${m.orders.delta_pct}%)`,
         deltaClass: "bad",
-        fuVal: fu ? `${fu.orders_pace} (+${fu.orders_vs_crisis_pct}%)` : "",
+        fuPrimary: fu ? String(fu.orders_pace) : "",
+        fuSub: fu ? `+${fu.orders_vs_crisis_pct}% pace` : "",
       },
       {
         label: "ASP (Avg Price)",
@@ -174,7 +176,8 @@ export function createKamBrainController({
         curr: fmtInr(m.asp.current),
         delta: "0.0% (Flat)",
         deltaClass: "neutral",
-        fuVal: fu ? fmtInr(fu.asp) : "",
+        fuPrimary: fu ? fmtInr(fu.asp) : "",
+        fuSub: fu ? "Flat" : "",
       },
       {
         label: "Out-of-Stock SKUs",
@@ -182,7 +185,8 @@ export function createKamBrainController({
         curr: String(m.out_of_stock_skus.current),
         delta: `+${m.out_of_stock_skus.newly_oos} new`,
         deltaClass: "bad",
-        fuVal: fu ? `${fu.out_of_stock_skus} (Target <= ${fu.oos_target_max})` : "",
+        fuPrimary: fu ? `${fu.out_of_stock_skus} SKUs` : "",
+        fuSub: fu ? `Target <= ${fu.oos_target_max}` : "",
       },
       {
         label: "Cancellation Rate",
@@ -190,9 +194,15 @@ export function createKamBrainController({
         curr: `${m.cancellation_rate_pct.current}%`,
         delta: `+${m.cancellation_rate_pct.delta_pp} pp`,
         deltaClass: "bad",
-        fuVal: fu ? `${fu.cancellation_rate_pct}% (Target <= ${fu.cancellation_target_max}%)` : "",
+        fuPrimary: fu ? `${fu.cancellation_rate_pct}%` : "",
+        fuSub: fu ? `Target <= ${fu.cancellation_target_max}%` : "",
       },
     ];
+
+    const gmvDeltaRs =
+      typeof m.sales_gmv.baseline === "number" && typeof m.sales_gmv.current === "number"
+        ? fmtInr(Math.abs(m.sales_gmv.baseline - m.sales_gmv.current))
+        : "₹65,000";
 
     return `
       <div class="kb-block kb-bento-card">
@@ -207,31 +217,44 @@ export function createKamBrainController({
             <thead>
               <tr>
                 <th>Metric</th>
-                <th>Last Month</th>
-                <th>This Month</th>
+                <th>Last Mo</th>
+                <th>This Mo</th>
                 <th>Change</th>
                 ${isFollowup && fu ? "<th>3-Day Pace</th>" : ""}
               </tr>
             </thead>
             <tbody>
               ${rows
-                .map(
-                  (r) => `
+        .map(
+          (r) => `
                 <tr>
                   <td>${esc(r.label)}</td>
                   <td>${esc(r.base)}</td>
                   <td>${esc(r.curr)}</td>
                   <td><span class="kb-delta ${esc(r.deltaClass)}">${esc(r.delta)}</span></td>
-                  ${
-                    isFollowup && fu
-                      ? `<td><span class="kb-delta good">${esc(r.fuVal)}</span></td>`
-                      : ""
-                  }
+                  ${isFollowup && fu
+              ? `<td><div class="kb-pace-cell"><span class="kb-delta good">${esc(r.fuPrimary)}</span><span class="kb-pace-sub">${esc(r.fuSub)}</span></div></td>`
+              : ""
+            }
                 </tr>`
-                )
-                .join("")}
+        )
+        .join("")}
             </tbody>
           </table>
+        </div>
+        <div class="kb-kpi-strip">
+          <div class="kb-kpi-tile">
+            <span class="kb-kpi-label">Monthly GMV Gap</span>
+            <strong class="kb-kpi-val coral">-${esc(gmvDeltaRs)}</strong>
+          </div>
+          <div class="kb-kpi-tile">
+            <span class="kb-kpi-label">Orders Lost</span>
+            <strong class="kb-kpi-val coral">${esc(m.orders.delta)} orders</strong>
+          </div>
+          <div class="kb-kpi-tile">
+            <span class="kb-kpi-label">Active / OOS SKUs</span>
+            <strong class="kb-kpi-val">${esc(m.out_of_stock_skus.current)} of 60 OOS</strong>
+          </div>
         </div>
       </div>
     `;
@@ -240,19 +263,19 @@ export function createKamBrainController({
   function renderPriorCommitments() {
     if (brain.mode !== "followup" || !brain.priorCommitments.length) return "";
     return `
-      <div class="kb-block kb-bento-card kb-followup-box">
+      <div class="kb-block kb-bento-card kb-followup-box bento-span-full">
         <div class="kb-block-head">
           <span>Prior Commitments Reviewed (3 Days Ago)</span>
           <span class="kb-tag good kb-pill-sage">Follow-Up Accountability</span>
         </div>
         <div class="kb-prior-list">
           ${brain.priorCommitments
-            .map((c) => {
-              const statusRaw = String(c.status || "pending");
-              const isDone = statusRaw.includes("done") && !statusRaw.includes("partial");
-              const badgeCls = isDone ? "good kb-pill-sage" : "warn kb-pill-amber";
-              const label = c.summary || c.action_summary || c.action_id;
-              return `
+        .map((c) => {
+          const statusRaw = String(c.status || "pending");
+          const isDone = statusRaw.includes("done") && !statusRaw.includes("partial");
+          const badgeCls = isDone ? "good kb-pill-sage" : "warn kb-pill-amber";
+          const label = c.summary || c.action_summary || c.action_id;
+          return `
                 <div class="kb-prior-item">
                   <div class="kb-prior-top">
                     <strong>${esc(c.action_id || "ACT")}: ${esc(label)}</strong>
@@ -261,8 +284,8 @@ export function createKamBrainController({
                   ${c.detail ? `<div class="kb-sub">${esc(c.detail)}</div>` : ""}
                 </div>
               `;
-            })
-            .join("")}
+        })
+        .join("")}
         </div>
       </div>
     `;
@@ -275,8 +298,8 @@ export function createKamBrainController({
     if (!diag || !Array.isArray(diag.drivers)) return "";
 
     const colors = {
-      stock_outs: "linear-gradient(90deg, #ff6347 0%, #fb7185 100%)",
-      pricing_gaps: "linear-gradient(90deg, #f59e42 0%, #fbbf24 100%)",
+      stock_outs: "linear-gradient(90deg, #ff6647 0%, #fb7185 100%)",
+      pricing_gaps: "linear-gradient(90deg, #f7a145 0%, #fbbf24 100%)",
       cancellations_visibility: "linear-gradient(90deg, #60a5fa 0%, #38bdf8 100%)",
     };
 
@@ -294,20 +317,20 @@ export function createKamBrainController({
     return `
       <div class="kb-block kb-bento-card">
         <div class="kb-block-head">
-          <span>Root-Cause Revenue Attribution (-${esc(diag.total_lost_orders)} Orders · ${esc(fmtInr(diag.total_lost_revenue))})</span>
+          <span>Root-Cause Revenue Attribution (-${esc(diag.total_lost_orders)} · ${esc(fmtInr(diag.total_lost_revenue))})</span>
           <span class="kb-tag ${brain.diagnosedLive ? "good kb-pill-sage" : ""}">
             ${brain.diagnosedLive ? "Live Diagnosis Verified" : "Snapshot Model"}
           </span>
         </div>
         <div class="kb-drivers">
           ${diag.drivers
-            .map((d) => {
-              const col = colors[d.driver] || "linear-gradient(90deg, #ff6347 0%, #f59e42 100%)";
-              return `
+        .map((d) => {
+          const col = colors[d.driver] || "linear-gradient(90deg, #ff6647 0%, #f7a145 100%)";
+          return `
                 <div class="kb-driver-row">
                   <div class="kb-driver-meta">
                     <span>#${esc(d.rank)} ${esc(d.title)}</span>
-                    <strong>${esc(d.share_pct)}% · ${esc(d.lost_orders)} orders (${esc(fmtInr(d.lost_revenue))})</strong>
+                    <strong>${esc(d.share_pct)}% · ${esc(d.lost_orders)} ord</strong>
                   </div>
                   <div class="kb-bar-track kb-driver-track">
                     <div class="kb-bar-fill kb-driver-fill" style="width: ${Math.min(100, Number(d.share_pct) || 0)}%; background: ${col};"></div>
@@ -315,44 +338,41 @@ export function createKamBrainController({
                   <div class="kb-sub">${esc(d.evidence)}</div>
                 </div>
               `;
-            })
-            .join("")}
+        })
+        .join("")}
         </div>
-        ${
-          topOos.length || priceSkus.length
-            ? `
-          <div class="kb-sku-grid">
-            ${
-              topOos.length
-                ? `
+        ${topOos.length || priceSkus.length
+        ? `
+          <div class="kb-sku-columns">
+            ${topOos.length
+          ? `
               <div class="kb-mini-card">
-                <div class="kb-mini-title">Top Out-of-Stock SKUs (Rev/Day Lost)</div>
+                <div class="kb-mini-title">Top Out-of-Stock SKUs</div>
                 ${topOos
-                  .map(
-                    (s) =>
-                      `<div class="kb-mini-row"><span>${esc(s.sku_id)} ${esc(s.name)}</span><strong>${esc(fmtInr(s.estimated_lost_rev_per_day))}/d</strong></div>`
-                  )
-                  .join("")}
+            .map(
+              (s) =>
+                `<div class="kb-sku-row"><span class="kb-sku-name" title="${esc(s.sku_id)} ${esc(s.name)}">${esc(s.sku_id)} ${esc(s.name)}</span><span class="kb-sku-metric">${esc(fmtInr(s.estimated_lost_rev_per_day))}/d</span></div>`
+            )
+            .join("")}
               </div>`
-                : ""
-            }
-            ${
-              priceSkus.length
-                ? `
-              <div class="kb-mini-card">
-                <div class="kb-mini-title">Price Gap SKUs (You vs Lowest)</div>
-                ${priceSkus
-                  .map(
-                    (g) =>
-                      `<div class="kb-mini-row"><span>${esc(g.sku_id)} ${esc(g.name)}</span><strong>${esc(fmtInr(g.seller_price))} vs ${esc(fmtInr(g.competitor_lowest_price))} (+${esc(g.price_gap_pct)}%)</strong></div>`
-                  )
-                  .join("")}
-              </div>`
-                : ""
-            }
-          </div>`
-            : ""
+          : ""
         }
+            ${priceSkus.length
+          ? `
+              <div class="kb-mini-card">
+                <div class="kb-mini-title">Price Gap SKUs</div>
+                ${priceSkus
+            .map(
+              (g) =>
+                `<div class="kb-sku-row"><span class="kb-sku-name" title="${esc(g.sku_id)} ${esc(g.name)}">${esc(g.sku_id)} ${esc(g.name)}</span><span class="kb-sku-metric">${esc(fmtInr(g.seller_price))} vs ${esc(fmtInr(g.competitor_lowest_price))} (+${esc(g.price_gap_pct)}%)</span></div>`
+            )
+            .join("")}
+              </div>`
+          : ""
+        }
+          </div>`
+        : ""
+      }
       </div>
     `;
   }
@@ -363,112 +383,105 @@ export function createKamBrainController({
     if (!actions.length && !brain.commitments.length) return "";
 
     return `
-      <div class="kb-block kb-bento-card">
+      <div class="kb-block kb-bento-card bento-span-full">
         <div class="kb-block-head">
           <span>Prioritised Recovery Plan &amp; Seller Commitments</span>
           <span class="kb-tag ${brain.commitments.length ? "good kb-pill-sage" : "kb-pill-amber"}">
             ${brain.commitments.length} Committed
           </span>
         </div>
-        <div class="kb-actions">
+        <div class="kb-actions-grid">
           ${actions
-            .map((a) => {
-              const matchedCommit = brain.commitments.find((c) => c.action_id === a.action_id);
-              const priorityPill = a.priority === 1 ? "kb-pill-coral" : a.priority === 2 ? "kb-pill-amber" : "";
-              return `
+        .map((a) => {
+          const matchedCommit = brain.commitments.find((c) => c.action_id === a.action_id);
+          const priorityPill = a.priority === 1 ? "kb-pill-coral" : a.priority === 2 ? "kb-pill-amber" : "";
+          return `
                 <div class="kb-action-card ${matchedCommit ? "committed" : ""}">
                   <div class="kb-action-top">
                     <span class="kb-priority">P${esc(a.priority)} · ${esc(a.action_id)}</span>
                     <span class="kb-tag ${priorityPill}">${esc(a.impact)}</span>
-                    ${
-                      matchedCommit
-                        ? `<span class="kb-tag good kb-pill-sage">Committed · Due: ${esc(matchedCommit.due_date)}</span>`
-                        : `<span class="kb-sub">Suggested: ${esc(a.recommended_due)}</span>`
-                    }
+                    ${matchedCommit
+              ? `<span class="kb-tag good kb-pill-sage">Committed · ${esc(matchedCommit.due_date)}</span>`
+              : `<span class="kb-sub">Due: ${esc(a.recommended_due)}</span>`
+            }
                   </div>
                   <div class="kb-action-title">${esc(a.title)}</div>
                   <div class="kb-sub">${esc(a.details)}</div>
-                  <div class="kb-action-rec">Indicative Recovery: <strong>${esc(a.estimated_recovery_range_rs)}</strong></div>
+                  <div class="kb-action-rec">Indicative Recovery:<br /><strong>${esc(a.estimated_recovery_range_rs)}</strong></div>
                 </div>
               `;
-            })
-            .join("")}
+        })
+        .join("")}
         </div>
-        ${
-          brain.commitments.filter((c) => !actions.some((a) => a.action_id === c.action_id)).length
-            ? `
+        ${brain.commitments.filter((c) => !actions.some((a) => a.action_id === c.action_id)).length
+        ? `
           <div class="kb-extra-commits">
             ${brain.commitments
-              .filter((c) => !actions.some((a) => a.action_id === c.action_id))
-              .map(
-                (c) => `
+          .filter((c) => !actions.some((a) => a.action_id === c.action_id))
+          .map(
+            (c) => `
                 <div class="kb-prior-item">
                   <div class="kb-prior-top">
                     <strong>${esc(c.action_id)}: ${esc(c.action_summary)}</strong>
                     <span class="kb-tag good kb-pill-sage">${esc(c.owner)} · Due ${esc(c.due_date)}</span>
                   </div>
                 </div>`
-              )
-              .join("")}
+          )
+          .join("")}
           </div>`
-            : ""
-        }
-        ${
-          brain.followupSchedule
-            ? `
+        : ""
+      }
+        ${brain.followupSchedule
+        ? `
           <div class="kb-followup-pill">
             <strong>Next Follow-Up Check-In:</strong> ${esc(brain.followupSchedule.followup_date)}
             &nbsp;|&nbsp; Targets: ${esc((brain.followupSchedule.success_targets || []).join("; "))}
           </div>`
-            : ""
-        }
+        : ""
+      }
       </div>
     `;
   }
 
   function renderToolLogSection() {
     return `
-      <div class="kb-block kb-bento-card">
+      <div class="kb-block kb-bento-card bento-span-full">
         <div class="kb-block-head">
           <span>Live Agent Tool &amp; Failover Audit</span>
           <span class="kb-tag ${brain.ungroundedTotal === 0 ? "good kb-pill-sage" : "warn kb-pill-amber"}">
-            ${
-              brain.ungroundedTotal === 0
-                ? "Grounding Check: 0 Ungrounded Numbers"
-                : `Warning: ${brain.ungroundedTotal} Ungrounded`
-            }
+            ${brain.ungroundedTotal === 0
+        ? "Grounding Check: 0 Ungrounded Numbers"
+        : `Warning: ${brain.ungroundedTotal} Ungrounded`
+      }
           </span>
         </div>
-        ${
-          brain.failovers.length
-            ? `
+        ${brain.failovers.length
+        ? `
           <div class="kb-failover-banner">
             Failover triggered: ${brain.failovers
-              .map((f) => `${esc(f.from)} -> ${esc(f.to)} (${esc(f.reason)})`)
-              .join(" | ")}
+          .map((f) => `${esc(f.from)} -> ${esc(f.to)} (${esc(f.reason)})`)
+          .join(" | ")}
           </div>`
-            : ""
-        }
+        : ""
+      }
         <div class="kb-tool-log">
-          ${
-            brain.toolLogs.length
-              ? [...brain.toolLogs]
-                  .reverse()
-                  .slice(0, 12)
-                  .map(
-                    (t) => `
+          ${brain.toolLogs.length
+        ? [...brain.toolLogs]
+          .reverse()
+          .slice(0, 12)
+          .map(
+            (t) => `
                   <div class="kb-tool-row kb-audit-row">
                     <span class="kb-tool-name">${esc(t.name)}</span>
                     <span class="kb-tool-src">${esc(t.source)}</span>
-                    <span class="kb-tool-ms">${
-                      t.status === "running" ? "running..." : `${esc(t.latency_ms)} ms`
-                    }</span>
+                    <span class="kb-tool-ms">${t.status === "running" ? "running..." : `${esc(t.latency_ms)} ms`
+              }</span>
                     <span class="kb-tool-summary">${esc(t.summary)}</span>
                   </div>`
-                  )
-                  .join("")
-              : `<div class="kb-sub">Tool calls from the Deterministic Diagnosis Engine will stream here live during the call.</div>`
-          }
+          )
+          .join("")
+        : `<div class="kb-sub">Tool calls from the Deterministic Diagnosis Engine will stream here live during the call.</div>`
+      }
         </div>
       </div>
     `;
@@ -480,25 +493,24 @@ export function createKamBrainController({
       brain.mode === "followup"
         ? "3-Day Follow-Up"
         : brain.mode === "proactive"
-        ? "Proactive Call (Riya)"
-        : "Inbound Call";
+          ? "Proactive Call (Riya)"
+          : "Inbound Call";
 
     const modeBadgeClass =
       brain.mode === "followup"
         ? "good kb-pill-sage"
         : brain.mode === "proactive"
-        ? "kb-pill-amber"
-        : "kb-pill-coral";
+          ? "kb-pill-amber"
+          : "kb-pill-coral";
 
     rootEl.innerHTML = `
       <div class="kb-status-strip">
         <span class="kb-tag ${modeBadgeClass}">${esc(modeLabel)}</span>
-        <span class="kb-tag pill-mono">LLM: ${esc(brain.activeProvider || "-")}</span>
-        ${
-          brain.lastLatency
-            ? `<span class="kb-tag pill-mono">First Token: ${esc(brain.lastLatency.llm_first_token_ms)} ms · Req/Turn: ${esc(brain.lastLatency.llm_requests)}</span>`
-            : ""
-        }
+        <span class="kb-tag">LLM: ${esc(brain.activeProvider || "-")}</span>
+        ${brain.lastLatency
+        ? `<span class="kb-tag">First Token: ${esc(brain.lastLatency.llm_first_token_ms)} ms · Req/Turn: ${esc(brain.lastLatency.llm_requests)}</span>`
+        : ""
+      }
       </div>
       ${renderPriorCommitments()}
       ${renderMetricsSection()}
@@ -525,8 +537,8 @@ export function createKamBrainController({
         <div class="kb-block-head">
           <span>Call Summary &amp; Mock WhatsApp Recap</span>
           <div style="display:flex; gap:8px;">
-            <button id="btnCopyWhatsapp" class="btn-pill btn-glass-sm" type="button">Copy WhatsApp Text</button>
-            <button id="btnDownloadSummary" class="btn-pill btn-coral-sm" type="button">Download .txt</button>
+            <button id="btnCopyWhatsapp" class="pill-btn dock-mini-btn" type="button">Copy WhatsApp Text</button>
+            <button id="btnDownloadSummary" class="pill-btn pill-btn-coral dock-mini-btn" type="button">Download .txt</button>
           </div>
         </div>
         <div class="summary-grid">
@@ -536,18 +548,17 @@ export function createKamBrainController({
               ${(card.key_issues || []).map((i) => `<li>${esc(i)}</li>`).join("")}
             </ul>
             <div class="kb-mini-title" style="margin-top:10px;">Committed Actions (${commits.length})</div>
-            ${
-              commits.length
-                ? `<ul class="summary-list">
+            ${commits.length
+        ? `<ul class="summary-list">
                     ${commits
-                      .map(
-                        (c) =>
-                          `<li><strong>${esc(c.action_id)}</strong>: ${esc(c.action_summary)} (${esc(c.owner)} · Due: ${esc(c.due_date)})</li>`
-                      )
-                      .join("")}
+          .map(
+            (c) =>
+              `<li><strong>${esc(c.action_id)}</strong>: ${esc(c.action_summary)} (${esc(c.owner)} · Due: ${esc(c.due_date)})</li>`
+          )
+          .join("")}
                    </ul>`
-                : `<div class="kb-sub">Standard recovery action targets included in WhatsApp message.</div>`
-            }
+        : `<div class="kb-sub">Standard recovery action targets included in WhatsApp message.</div>`
+      }
             <div class="kb-followup-pill" style="margin-top:8px;">
               <strong>Follow-Up:</strong> ${esc(fu.followup_date || "In 3 days")}
               &nbsp;|&nbsp; ${(fu.success_targets || []).map((t) => esc(t)).join("; ")}

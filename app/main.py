@@ -123,7 +123,8 @@ def create_app(
                 "openrouter": bool(settings.openrouter_api_key.strip()),
                 "mock": settings.allow_mock_llm,
             },
-            "active_llm_chain": [p.key for p in router.configured_providers()],
+            "active_llm_chain": [p.key for p in router.configured_providers() if not router.is_disabled(p.key)],
+            "disabled_providers": dict(router.disabled_providers),
             "llm_startup_smoke": router.startup_report,
             "tts_config": {
                 "provider": settings.tts_provider,
@@ -177,9 +178,9 @@ def create_app(
                     yield _format_sse(ev["event"], ev["data"])
             except AllProvidersUnavailableError as exc:
                 yield _format_sse("error", {"message": str(exc)})
-            except Exception as exc:
+            except Exception:
                 logger.exception("Greeting stream failed")
-                yield _format_sse("error", {"message": f"Unexpected error: {exc}"})
+                yield _format_sse("error", {"message": "Temporary server error while starting call. Please try again."})
 
         return StreamingResponse(
             event_gen(),
@@ -201,9 +202,9 @@ def create_app(
                     yield _format_sse(ev["event"], ev["data"])
             except AllProvidersUnavailableError as exc:
                 yield _format_sse("error", {"message": str(exc)})
-            except Exception as exc:
+            except Exception:
                 logger.exception("Chat SSE turn failed")
-                yield _format_sse("error", {"message": f"Turn failed: {exc}"})
+                yield _format_sse("error", {"message": "Temporary server error while generating response. Please try again."})
 
         return StreamingResponse(
             event_gen(),

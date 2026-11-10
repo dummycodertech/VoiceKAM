@@ -38,7 +38,7 @@ class ProviderHealth:
 
 
 class LLMRouter:
-    """Routes streaming turns through ordered providers with 429 cooldown & automatic failover."""
+    """Routes streaming turns through ordered providers with 429 cooldown, 403 permanent disablement & failover."""
 
     def __init__(
         self,
@@ -48,6 +48,7 @@ class LLMRouter:
         self.providers = providers
         self.cooldown_seconds = cooldown_seconds
         self.cooldowns: dict[str, float] = {}
+        self.disabled_providers: dict[str, str] = {}
         self.startup_report: list[dict[str, Any]] = []
         self.live_groq_models: set[str] | None = None
 
@@ -92,6 +93,14 @@ class LLMRouter:
 
     def configured_providers(self) -> list[LLMProvider]:
         return [p for p in self.providers if p.is_configured()]
+
+    def is_disabled(self, provider_key: str) -> bool:
+        return provider_key in self.disabled_providers
+
+    def mark_disabled(self, provider_key: str, reason: str = "forbidden") -> None:
+        self.disabled_providers[provider_key] = reason
+        self.cooldowns.pop(provider_key, None)
+        logger.warning("Permanently disabled %s for process lifetime (%s)", provider_key, reason)
 
     def is_in_cooldown(self, provider_key: str, now: float | None = None) -> bool:
         t = now if now is not None else time.monotonic()
@@ -146,8 +155,11 @@ class LLMRouter:
                 entry["smoke_ok"] = True
             except Exception as exc:
                 entry["error"] = str(exc)[:200]
-                if isinstance(exc, ProviderRateLimitOrTransientError) and exc.is_rate_limit:
-                    self.mark_cooldown(p.key, exc.retry_after_seconds)
+                if isinstance(exc, ProviderRateLimitOrTransientError):
+                    if exc.is_forbidden:
+                        self.mark_disabled(p.key, reason=exc.reason_code)
+                    elif exc.is_rate_limit:
+                        self.mark_cooldown(p.key, exc.retry_after_seconds)
             entry["latency_ms"] = round((time.perf_counter() - t0) * 1000)
             report.append(entry)
             logger.info("Startup smoke test [%s]: %s", p.key, entry)
@@ -156,7 +168,7 @@ class LLMRouter:
         return report
 
     def _ordered_candidates(self) -> list[LLMProvider]:
-        active = self.configured_providers()
+        active = [p for p in self.configured_providers() if not self.is_disabled(p.key)]
         if not active:
             return []
         now = time.monotonic()
@@ -176,13 +188,19 @@ class LLMRouter:
         max_tokens: int = 220,
     ) -> AsyncIterator[tuple[LLMStreamChunk, list[dict[str, str]]]]:
         """Yield (LLMStreamChunk, failover_events) across configured providers."""
-        candidates = self._ordered_candidates()
-        if not candidates:
+        if not self.configured_providers():
             raise AllProvidersUnavailableError(
                 "No LLM API keys are configured. Add GROQ_API_KEY or GEMINI_API_KEY in .env."
             )
+        candidates = self._ordered_candidates()
+        if not candidates:
+            disabled_summary = ", ".join(f"{k} ({r})" for k, r in sorted(self.disabled_providers.items()))
+            raise AllProvidersUnavailableError(
+                f"All configured LLM providers are permanently disabled: {disabled_summary}"
+            )
 
-        errors: list[str] = []
+        sanitized_errors: list[str] = []
+        detailed_errors: list[str] = []
         failovers: list[dict[str, str]] = []
 
         for idx, provider in enumerate(candidates):
@@ -200,8 +218,12 @@ class LLMRouter:
                 return
             except ProviderRateLimitOrTransientError as exc:
                 err_msg = str(exc)
-                errors.append(f"{provider.key}: {err_msg}")
-                if exc.is_rate_limit:
+                detailed_errors.append(f"{provider.key}: {err_msg}")
+                sanitized_errors.append(f"{provider.key} ({exc.reason_code})")
+                logger.warning("Provider %s failed [%s]: %s", provider.key, exc.reason_code, err_msg)
+                if exc.is_forbidden:
+                    self.mark_disabled(provider.key, reason=exc.reason_code)
+                elif exc.is_rate_limit:
                     self.mark_cooldown(provider.key, exc.retry_after_seconds)
                 if emitted_any_content:
                     # Do not duplicate already-streamed tokens; surface clean failure only if mid-stream broke
@@ -211,13 +233,17 @@ class LLMRouter:
                     nxt = candidates[idx + 1]
                     failovers.append(
                         {
+                            "type": "provider_failover",
                             "from": provider.key,
                             "to": nxt.key,
-                            "reason": err_msg[:140],
+                            "reason_code": exc.reason_code,
                         }
                     )
-                    logger.warning("Failing over %s -> %s (%s)", provider.key, nxt.key, err_msg[:120])
+                    logger.warning("Failing over %s -> %s (reason_code=%s)", provider.key, nxt.key, exc.reason_code)
                 continue
 
-        raise AllProvidersUnavailableError("All configured LLM providers failed: " + " | ".join(errors))
+        logger.error("All configured LLM providers failed: %s", " | ".join(detailed_errors))
+        raise AllProvidersUnavailableError(
+            "All configured LLM providers failed: " + " | ".join(sanitized_errors)
+        )
 

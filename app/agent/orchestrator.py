@@ -118,7 +118,9 @@ class AgentOrchestrator:
             return tname, targs, res, ms
 
         for tname, targs in tool_specs:
-            events.append(_sse("tool_call", {"name": tname, "arguments": targs, "source": "server_preexec"}))
+            start_payload = {"name": tname, "arguments": targs, "source": "server_preexec"}
+            events.append(_sse("tool_start", start_payload))
+            events.append(_sse("tool_call", start_payload))
 
         results = await asyncio.gather(*[_exec_one(n, a) for n, a in tool_specs])
         for tname, targs, res, ms in results:
@@ -132,7 +134,12 @@ class AgentOrchestrator:
             }
             session.tool_history.append(record)
             combined[tname] = _compact_tool_payload(tname, res)
-            events.append(_sse("tool_result", {"name": tname, "result": res, "latency_ms": ms}))
+            events.append(
+                _sse(
+                    "tool_result",
+                    {"name": tname, "result": res, "latency_ms": ms, "source": "server_preexec"},
+                )
+            )
 
         return combined, events
 
@@ -205,8 +212,18 @@ class AgentOrchestrator:
 
         session.turn_count += 1
         session.messages.append(CanonicalMessage(role="user", content=clean_user))
+        prev_phase = session.phase
         advance_phase_before_turn(session, clean_user)
         yield _sse("phase", {"phase": session.phase.value, "mode": session.mode})
+        if session.phase != prev_phase:
+            yield _sse(
+                "phase_change",
+                {
+                    "phase": session.phase.value,
+                    "previous_phase": prev_phase.value,
+                    "mode": session.mode,
+                },
+            )
 
         async for ev in self._stream_agent_response(session):
             yield ev
@@ -300,7 +317,9 @@ class AgentOrchestrator:
                 session.messages.append(assistant_tc_msg)
 
                 for tc in pending_tool_calls:
-                    yield _sse("tool_call", {"name": tc.name, "arguments": tc.arguments, "source": "llm"})
+                    tc_payload = {"name": tc.name, "arguments": tc.arguments, "source": "llm"}
+                    yield _sse("tool_start", tc_payload)
+                    yield _sse("tool_call", tc_payload)
 
                 async def _exec_tc(tc: ToolCallRequest):
                     t0 = time.perf_counter()
@@ -320,7 +339,10 @@ class AgentOrchestrator:
                             "source": "llm",
                         }
                     )
-                    yield _sse("tool_result", {"name": tc.name, "result": res, "latency_ms": ms})
+                    yield _sse(
+                        "tool_result",
+                        {"name": tc.name, "result": res, "latency_ms": ms, "source": "llm"},
+                    )
                     if tc.name == "send_call_summary" and "summary_card" in res:
                         yield _sse("summary_card", res["summary_card"])
 
@@ -350,8 +372,13 @@ class AgentOrchestrator:
                     "source": "server_fallback",
                 }
             )
-            yield _sse("tool_call", {"name": "send_call_summary", "arguments": {}, "source": "server_fallback"})
-            yield _sse("tool_result", {"name": "send_call_summary", "result": res, "latency_ms": 0.1})
+            fb_payload = {"name": "send_call_summary", "arguments": {}, "source": "server_fallback"}
+            yield _sse("tool_start", fb_payload)
+            yield _sse("tool_call", fb_payload)
+            yield _sse(
+                "tool_result",
+                {"name": "send_call_summary", "result": res, "latency_ms": 0.1, "source": "server_fallback"},
+            )
             if "summary_card" in res:
                 yield _sse("summary_card", res["summary_card"])
 
@@ -380,7 +407,17 @@ class AgentOrchestrator:
             )
 
         session.messages.append(CanonicalMessage(role="assistant", content=cleaned_reply))
+        prev_after = session.phase
         advance_phase_after_turn(session)
+        if session.phase != prev_after:
+            yield _sse(
+                "phase_change",
+                {
+                    "phase": session.phase.value,
+                    "previous_phase": prev_after.value,
+                    "mode": session.mode,
+                },
+            )
 
         total_ms = round((time.perf_counter() - t_start) * 1000)
         latency_info = {

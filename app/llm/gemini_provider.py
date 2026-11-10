@@ -159,7 +159,7 @@ class GeminiProvider(LLMProvider):
         max_tokens: int = 220,
     ) -> AsyncIterator[LLMStreamChunk]:
         if not self.is_configured():
-            raise ProviderRateLimitOrTransientError("gemini API key is not configured")
+            raise ProviderRateLimitOrTransientError("gemini API key is not configured", reason_code="forbidden")
 
         client = genai.Client(
             api_key=self.api_key,
@@ -224,16 +224,22 @@ class GeminiProvider(LLMProvider):
                                 )
         except asyncio.TimeoutError as exc:
             raise ProviderRateLimitOrTransientError(
-                f"gemini ({self.model_name}) timed out after {self.timeout_seconds}s"
+                f"gemini ({self.model_name}) timed out after {self.timeout_seconds}s",
+                reason_code="timeout",
             ) from exc
         except Exception as exc:
             msg = str(exc)
             lower = msg.lower()
-            is_rl = "429" in msg or "resource_exhausted" in lower or "quota" in lower
+            is_fb = "403" in msg or "permission_denied" in lower or "forbidden" in lower
+            is_rl = not is_fb and ("429" in msg or "resource_exhausted" in lower or "quota" in lower)
+            is_to = "timeout" in lower or "deadline_exceeded" in lower
+            rc = "forbidden" if is_fb else ("rate_limited" if is_rl else ("timeout" if is_to else "server_error"))
             raise ProviderRateLimitOrTransientError(
                 f"gemini ({self.model_name}) error: {msg[:250]}",
-                status_code=429 if is_rl else None,
+                status_code=403 if is_fb else (429 if is_rl else None),
                 is_rate_limit=is_rl,
+                is_forbidden=is_fb,
+                reason_code=rc,
             ) from exc
 
         if collected_calls:

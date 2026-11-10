@@ -1,0 +1,362 @@
+{
+  "source_call": "inbound",
+  "turn_index": 0,
+  "user_text": "Hi Riya, my sales dropped significantly this month. Can you help?",
+  "request": {
+    "method": "POST",
+    "url": "/api/chat",
+    "body": {
+      "session_id": "8b4d1d1f4a7b",
+      "text": "Hi Riya, my sales dropped significantly this month. Can you help?",
+      "language": "en-IN"
+    }
+  },
+  "status_code": 200,
+  "headers": {
+    "date": "Tue, 10 Nov 2026 11:08:37 GMT",
+    "server": "uvicorn",
+    "cache-control": "no-cache",
+    "x-accel-buffering": "no",
+    "content-type": "text/event-stream; charset=utf-8",
+    "vary": "Origin",
+    "transfer-encoding": "chunked"
+  },
+  "raw_sse": "event: phase\ndata: {\"phase\": \"CLARIFY\", \"mode\": \"inbound\"}\n\nevent: tool_call\ndata: {\"name\": \"get_seller_overview\", \"arguments\": {}, \"source\": \"llm\"}\n\nevent: tool_result\ndata: {\"name\": \"get_seller_overview\", \"result\": {\"seller\": {\"seller_id\": \"MOCK-DL-4821\", \"seller_name\": \"Rajesh Kumar\", \"salutation\": \"Rajesh ji\", \"shop_name\": \"Kumar Home & Kitchen\", \"city\": \"Delhi\", \"category\": \"Home & Kitchen\", \"active_catalog_size\": 60, \"tenure_months\": 30, \"prototype_notice\": \"Prototype - Mock Data Only\"}, \"snapshot\": \"current\", \"headline_summary\": {\"sales_last_month\": 200000, \"sales_this_month\": 135000, \"sales_drop_pct\": 32.5, \"orders_last_month\": 400, \"orders_this_month\": 270, \"orders_drop\": 130, \"asp\": 500, \"oos_last_month\": 5, \"oos_this_month\": 18, \"cancellation_rate_last_month_pct\": 8.0, \"cancellation_rate_this_month_pct\": 14.0}, \"followup_metrics\": null}, \"latency_ms\": 0.34}\n\nevent: failover\ndata: {\"from\": \"groq:openai/gpt-oss-20b\", \"to\": \"groq:openai/gpt-oss-120b\", \"reason\": \"groq (openai/gpt-oss-20b) HTTP 429 rate limited: {\\\"error\\\":{\\\"message\\\":\\\"Rate limit reached for model `openai/gpt-oss-20b` in organization `org\"}\n\nevent: token\ndata: {\"text\": \"I\"}\n\nevent: token\ndata: {\"text\": \" see\"}\n\nevent: token\ndata: {\"text\": \" your\"}\n\nevent: token\ndata: {\"text\": \" sales\"}\n\nevent: token\ndata: {\"text\": \" fell\"}\n\nevent: token\ndata: {\"text\": \" \"}\n\nevent: token\ndata: {\"text\": \"32\"}\n\nevent: token\ndata: {\"text\": \".\"}\n\nevent: sentence\ndata: {\"text\": \"I see your sales fell 32.\", \"speakable\": \"I see your sales fell 32.\"}\n\nevent: token\ndata: {\"text\": \"5\"}\n\nevent: token\ndata: {\"text\": \"%\"}\n\nevent: token\ndata: {\"text\": \" and\"}\n\nevent: token\ndata: {\"text\": \" out\"}\n\nevent: token\ndata: {\"text\": \"‑\"}\n\nevent: token\ndata: {\"text\": \"of\"}\n\nevent: token\ndata: {\"text\": \"‑\"}\n\nevent: token\ndata: {\"text\": \"stock\"}\n\nevent: token\ndata: {\"text\": \" SK\"}\n\nevent: token\ndata: {\"text\": \"Us\"}\n\nevent: token\ndata: {\"text\": \" rose\"}\n\nevent: token\ndata: {\"text\": \" to\"}\n\nevent: token\ndata: {\"text\": \" \"}\n\nevent: token\ndata: {\"text\": \"18\"}\n\nevent: token\ndata: {\"text\": \" this\"}\n\nevent: token\ndata: {\"text\": \" month\"}\n\nevent: token\ndata: {\"text\": \".\"}\n\nevent: sentence\ndata: {\"text\": \"5% and out of stock SKUs rose to 18 this month.\", \"speakable\": \"five percent and out of stock products rose to 18 this month.\"}\n\nevent: token\ndata: {\"text\": \" Have\"}\n\nevent: token\ndata: {\"text\": \" there\"}\n\nevent: token\ndata: {\"text\": \" been\"}\n\nevent: token\ndata: {\"text\": \" any\"}\n\nevent: token\ndata: {\"text\": \" delays\"}\n\nevent: token\ndata: {\"text\": \" rest\"}\n\nevent: token\ndata: {\"text\": \"ocking\"}\n\nevent: token\ndata: {\"text\": \" your\"}\n\nevent: token\ndata: {\"text\": \" best\"}\n\nevent: token\ndata: {\"text\": \"‑\"}\n\nevent: token\ndata: {\"text\": \"selling\"}\n\nevent: token\ndata: {\"text\": \" items\"}\n\nevent: token\ndata: {\"text\": \" recently\"}\n\nevent: token\ndata: {\"text\": \"?\"}\n\nevent: sentence\ndata: {\"text\": \"Have there been any delays restocking your best selling items recently?\", \"speakable\": \"Have there been any delays restocking your best selling items recently?\"}\n\nevent: latency\ndata: {\"llm_first_token_ms\": 995, \"total_turn_ms\": 1081, \"llm_requests\": 2, \"provider\": \"groq:openai/gpt-oss-120b\", \"ungrounded_numbers\": []}\n\nevent: done\ndata: {\"text\": \"I see your sales fell 32.5% and out of stock SKUs rose to 18 this month. Have there been any delays restocking your best selling items recently?\", \"speakable\": \"I see your sales fell thirty-two point five percent and out of stock products rose to 18 this month. Have there been any delays restocking your best selling items recently?\", \"phase\": \"CLARIFY\", \"provider\": \"groq:openai/gpt-oss-120b\", \"commitments\": [], \"followup_schedule\": null, \"summary_card\": null}\n\n",
+  "parsed_events": [
+    {
+      "event": "phase",
+      "data": {
+        "phase": "CLARIFY",
+        "mode": "inbound"
+      }
+    },
+    {
+      "event": "tool_call",
+      "data": {
+        "name": "get_seller_overview",
+        "arguments": {},
+        "source": "llm"
+      }
+    },
+    {
+      "event": "tool_result",
+      "data": {
+        "name": "get_seller_overview",
+        "result": {
+          "seller": {
+            "seller_id": "MOCK-DL-4821",
+            "seller_name": "Rajesh Kumar",
+            "salutation": "Rajesh ji",
+            "shop_name": "Kumar Home & Kitchen",
+            "city": "Delhi",
+            "category": "Home & Kitchen",
+            "active_catalog_size": 60,
+            "tenure_months": 30,
+            "prototype_notice": "Prototype - Mock Data Only"
+          },
+          "snapshot": "current",
+          "headline_summary": {
+            "sales_last_month": 200000,
+            "sales_this_month": 135000,
+            "sales_drop_pct": 32.5,
+            "orders_last_month": 400,
+            "orders_this_month": 270,
+            "orders_drop": 130,
+            "asp": 500,
+            "oos_last_month": 5,
+            "oos_this_month": 18,
+            "cancellation_rate_last_month_pct": 8.0,
+            "cancellation_rate_this_month_pct": 14.0
+          },
+          "followup_metrics": null
+        },
+        "latency_ms": 0.34
+      }
+    },
+    {
+      "event": "failover",
+      "data": {
+        "from": "groq:openai/gpt-oss-20b",
+        "to": "groq:openai/gpt-oss-120b",
+        "reason": "groq (openai/gpt-oss-20b) HTTP 429 rate limited: {\"error\":{\"message\":\"Rate limit reached for model `openai/gpt-oss-20b` in organization `org"
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": "I"
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": " see"
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": " your"
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": " sales"
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": " fell"
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": " "
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": "32"
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": "."
+      }
+    },
+    {
+      "event": "sentence",
+      "data": {
+        "text": "I see your sales fell 32.",
+        "speakable": "I see your sales fell 32."
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": "5"
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": "%"
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": " and"
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": " out"
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": "‑"
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": "of"
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": "‑"
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": "stock"
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": " SK"
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": "Us"
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": " rose"
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": " to"
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": " "
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": "18"
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": " this"
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": " month"
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": "."
+      }
+    },
+    {
+      "event": "sentence",
+      "data": {
+        "text": "5% and out of stock SKUs rose to 18 this month.",
+        "speakable": "five percent and out of stock products rose to 18 this month."
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": " Have"
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": " there"
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": " been"
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": " any"
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": " delays"
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": " rest"
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": "ocking"
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": " your"
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": " best"
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": "‑"
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": "selling"
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": " items"
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": " recently"
+      }
+    },
+    {
+      "event": "token",
+      "data": {
+        "text": "?"
+      }
+    },
+    {
+      "event": "sentence",
+      "data": {
+        "text": "Have there been any delays restocking your best selling items recently?",
+        "speakable": "Have there been any delays restocking your best selling items recently?"
+      }
+    },
+    {
+      "event": "latency",
+      "data": {
+        "llm_first_token_ms": 995,
+        "total_turn_ms": 1081,
+        "llm_requests": 2,
+        "provider": "groq:openai/gpt-oss-120b",
+        "ungrounded_numbers": []
+      }
+    },
+    {
+      "event": "done",
+      "data": {
+        "text": "I see your sales fell 32.5% and out of stock SKUs rose to 18 this month. Have there been any delays restocking your best selling items recently?",
+        "speakable": "I see your sales fell thirty-two point five percent and out of stock products rose to 18 this month. Have there been any delays restocking your best selling items recently?",
+        "phase": "CLARIFY",
+        "provider": "groq:openai/gpt-oss-120b",
+        "commitments": [],
+        "followup_schedule": null,
+        "summary_card": null
+      }
+    }
+  ]
+}

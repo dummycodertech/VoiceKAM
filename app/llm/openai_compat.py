@@ -166,7 +166,10 @@ class OpenAICompatProvider(LLMProvider):
         max_tokens: int = 220,
     ) -> AsyncIterator[LLMStreamChunk]:
         if not self.is_configured():
-            raise ProviderRateLimitOrTransientError(f"{self.provider_name} API key is not configured")
+            raise ProviderRateLimitOrTransientError(
+                f"{self.provider_name} API key is not configured",
+                reason_code="forbidden",
+            )
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -215,6 +218,7 @@ class OpenAICompatProvider(LLMProvider):
                                 status_code=429,
                                 retry_after_seconds=_parse_retry_after(resp.headers),
                                 is_rate_limit=True,
+                                reason_code="rate_limited",
                             )
 
                         if resp.status_code == 403:
@@ -222,15 +226,18 @@ class OpenAICompatProvider(LLMProvider):
                             raise ProviderRateLimitOrTransientError(
                                 f"{self.provider_name} ({self.model_name}) HTTP 403 blocked: {body[:200]}",
                                 status_code=403,
-                                retry_after_seconds=3600.0,
-                                is_rate_limit=True,
+                                is_rate_limit=False,
+                                is_forbidden=True,
+                                reason_code="forbidden",
                             )
 
                         if resp.status_code in (404, 408) or resp.status_code >= 500:
                             body = (await resp.aread()).decode("utf-8", errors="ignore")
+                            rc = "timeout" if resp.status_code in (408, 504) else "server_error"
                             raise ProviderRateLimitOrTransientError(
                                 f"{self.provider_name} ({self.model_name}) HTTP {resp.status_code}: {body[:220]}",
                                 status_code=resp.status_code,
+                                reason_code=rc,
                             )
 
                         if resp.status_code >= 400:
@@ -238,6 +245,7 @@ class OpenAICompatProvider(LLMProvider):
                             raise ProviderRateLimitOrTransientError(
                                 f"{self.provider_name} ({self.model_name}) HTTP {resp.status_code}: {body[:220]}",
                                 status_code=resp.status_code,
+                                reason_code="server_error",
                             )
 
                         async for raw_line in resp.aiter_lines():
@@ -255,10 +263,17 @@ class OpenAICompatProvider(LLMProvider):
                             if "error" in event:
                                 err = event["error"]
                                 code = err.get("code") if isinstance(err, dict) else None
-                                is_rl = str(code) == "429" or "rate" in str(err).lower()
+                                err_low = str(err).lower()
+                                is_fb = str(code) == "403" or "forbidden" in err_low or "permission" in err_low
+                                is_rl = not is_fb and (str(code) == "429" or "rate" in err_low)
+                                is_to = "timeout" in err_low
+                                rc = "forbidden" if is_fb else ("rate_limited" if is_rl else ("timeout" if is_to else "server_error"))
                                 raise ProviderRateLimitOrTransientError(
                                     f"{self.provider_name} stream error: {err}",
+                                    status_code=403 if is_fb else (429 if is_rl else None),
                                     is_rate_limit=is_rl,
+                                    is_forbidden=is_fb,
+                                    reason_code=rc,
                                 )
 
                             choices = event.get("choices") or []
@@ -293,8 +308,10 @@ class OpenAICompatProvider(LLMProvider):
                                     bucket["arguments"] += fn["arguments"]
 
             except (httpx.TimeoutException, httpx.RequestError) as exc:
+                is_to = isinstance(exc, httpx.TimeoutException) or "timeout" in str(exc).lower()
                 raise ProviderRateLimitOrTransientError(
-                    f"{self.provider_name} ({self.model_name}) network/timeout error: {exc}"
+                    f"{self.provider_name} ({self.model_name}) network/timeout error: {exc}",
+                    reason_code="timeout" if is_to else "server_error",
                 ) from exc
 
             if retry_without_reasoning:
