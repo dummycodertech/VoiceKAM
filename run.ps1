@@ -76,9 +76,9 @@ try {
     Write-Host "Opening free Cloudflare Quick Tunnel -> http://127.0.0.1:$Port ..." -ForegroundColor Cyan
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $CfBin
-    $psi.Arguments = "tunnel --url http://127.0.0.1:$Port --no-autoupdate"
+    $psi.Arguments = "tunnel --url http://127.0.0.1:$Port --protocol http2 --no-autoupdate"
     $psi.RedirectStandardError = $true
-    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardOutput = $false
     $psi.UseShellExecute = $false
     $psi.CreateNoWindow = $true
 
@@ -86,22 +86,25 @@ try {
     $TunnelProc.StartInfo = $psi
     $null = $TunnelProc.Start()
 
+    $PendingUrl = $null
     $PrintedUrl = $false
     while (-not $TunnelProc.HasExited -and -not $ServerProc.HasExited) {
         $line = $TunnelProc.StandardError.ReadLine()
         if ($null -eq $line) { break }
         if ($line -match "(https://[a-zA-Z0-9-]+\.trycloudflare\.com)") {
-            $PublicUrl = $matches[1]
-            if (-not $PrintedUrl) {
-                $PrintedUrl = $true
-                Write-Host ""
-                Write-Host "============================================================" -ForegroundColor Green
-                Write-Host " PUBLIC HTTPS LIVE DEMO URL: $PublicUrl" -ForegroundColor Green
-                Write-Host " Open in Google Chrome for full voice mic access." -ForegroundColor Green
-                Write-Host " Press Ctrl+C to stop both server and tunnel." -ForegroundColor Gray
-                Write-Host "============================================================" -ForegroundColor Green
-                Write-Host ""
-            }
+            $PendingUrl = $matches[1]
+        }
+        if ($PendingUrl -and -not $PrintedUrl -and $line -match "Registered tunnel connection") {
+            $PrintedUrl = $true
+            # Brief propagation buffer so opening the printed link works on first click
+            Start-Sleep -Seconds 3
+            Write-Host ""
+            Write-Host "============================================================" -ForegroundColor Green
+            Write-Host " PUBLIC HTTPS LIVE DEMO URL: $PendingUrl" -ForegroundColor Green
+            Write-Host " Open in Google Chrome for full voice mic access." -ForegroundColor Green
+            Write-Host " Press Ctrl+C to stop both server and tunnel." -ForegroundColor Gray
+            Write-Host "============================================================" -ForegroundColor Green
+            Write-Host ""
         }
     }
 }

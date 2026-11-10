@@ -42,7 +42,7 @@ fi
 
 if command -v cloudflared >/dev/null 2>&1; then
   echo "Starting free Cloudflare Quick Tunnel ..."
-  cloudflared tunnel --url "http://127.0.0.1:${PORT}" --no-autoupdate 2>&1 | tee /dev/stderr | grep --line-buffered -oE 'https://[a-zA-Z0-9-]+\.trycloudflare\.com' | head -n 1 | xargs -r -I{} printf "\nPUBLIC HTTPS LIVE DEMO URL: %s\n\n" "{}" &
+  cloudflared tunnel --url "http://127.0.0.1:${PORT}" --protocol http2 --no-autoupdate 2>&1 | tee /dev/stderr | grep --line-buffered -oE 'https://[a-zA-Z0-9-]+\.trycloudflare\.com' | head -n 1 | xargs -r -I{} printf "\nPUBLIC HTTPS LIVE DEMO URL: %s\n\n" "{}" &
   TUNNEL_PID=$!
   wait "$SERVER_PID"
 else
