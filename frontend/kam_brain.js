@@ -146,7 +146,7 @@ export function createKamBrainController({
   function renderMetricsSection() {
     const metricsPayload = brain.demoData?.metrics;
     const m = metricsPayload?.metrics;
-    if (!m) return `<div class="kb-empty">Loading account snapshot...</div>`;
+    if (!m) return `<div class="kb-bento-card kb-empty">Loading account snapshot...</div>`;
 
     const isFollowup = brain.mode === "followup" || Boolean(metricsPayload.followup);
     const fu = metricsPayload.followup;
@@ -195,10 +195,10 @@ export function createKamBrainController({
     ];
 
     return `
-      <div class="kb-block">
+      <div class="kb-block kb-bento-card">
         <div class="kb-block-head">
           <span>Store Performance Comparison</span>
-          <span class="kb-tag ${isFollowup ? "good" : ""}">
+          <span class="kb-tag ${isFollowup ? "good kb-pill-sage" : "kb-pill-coral"}">
             ${isFollowup ? "3-Day Recovery Active" : "Volume Problem · Flat ASP"}
           </span>
         </div>
@@ -240,17 +240,17 @@ export function createKamBrainController({
   function renderPriorCommitments() {
     if (brain.mode !== "followup" || !brain.priorCommitments.length) return "";
     return `
-      <div class="kb-block kb-followup-box">
+      <div class="kb-block kb-bento-card kb-followup-box">
         <div class="kb-block-head">
           <span>Prior Commitments Reviewed (3 Days Ago)</span>
-          <span class="kb-tag good">Follow-Up Accountability</span>
+          <span class="kb-tag good kb-pill-sage">Follow-Up Accountability</span>
         </div>
         <div class="kb-prior-list">
           ${brain.priorCommitments
             .map((c) => {
               const statusRaw = String(c.status || "pending");
               const isDone = statusRaw.includes("done") && !statusRaw.includes("partial");
-              const badgeCls = isDone ? "good" : "warn";
+              const badgeCls = isDone ? "good kb-pill-sage" : "warn kb-pill-amber";
               const label = c.summary || c.action_summary || c.action_id;
               return `
                 <div class="kb-prior-item">
@@ -275,9 +275,9 @@ export function createKamBrainController({
     if (!diag || !Array.isArray(diag.drivers)) return "";
 
     const colors = {
-      stock_outs: "#e11d48",
-      pricing_gaps: "#f59e0b",
-      cancellations_visibility: "#38bdf8",
+      stock_outs: "linear-gradient(90deg, #ff6347 0%, #fb7185 100%)",
+      pricing_gaps: "linear-gradient(90deg, #f59e42 0%, #fbbf24 100%)",
+      cancellations_visibility: "linear-gradient(90deg, #60a5fa 0%, #38bdf8 100%)",
     };
 
     const topOos = (oos?.top_oos_skus || []).slice(0, 3);
@@ -292,25 +292,25 @@ export function createKamBrainController({
         : allPriceSkus.slice(0, 3);
 
     return `
-      <div class="kb-block">
+      <div class="kb-block kb-bento-card">
         <div class="kb-block-head">
           <span>Root-Cause Revenue Attribution (-${esc(diag.total_lost_orders)} Orders · ${esc(fmtInr(diag.total_lost_revenue))})</span>
-          <span class="kb-tag ${brain.diagnosedLive ? "good" : ""}">
+          <span class="kb-tag ${brain.diagnosedLive ? "good kb-pill-sage" : ""}">
             ${brain.diagnosedLive ? "Live Diagnosis Verified" : "Snapshot Model"}
           </span>
         </div>
         <div class="kb-drivers">
           ${diag.drivers
             .map((d) => {
-              const col = colors[d.driver] || "#a78bfa";
+              const col = colors[d.driver] || "linear-gradient(90deg, #ff6347 0%, #f59e42 100%)";
               return `
                 <div class="kb-driver-row">
                   <div class="kb-driver-meta">
                     <span>#${esc(d.rank)} ${esc(d.title)}</span>
                     <strong>${esc(d.share_pct)}% · ${esc(d.lost_orders)} orders (${esc(fmtInr(d.lost_revenue))})</strong>
                   </div>
-                  <div class="kb-bar-track">
-                    <div class="kb-bar-fill" style="width: ${Math.min(100, Number(d.share_pct) || 0)}%; background: ${col};"></div>
+                  <div class="kb-bar-track kb-driver-track">
+                    <div class="kb-bar-fill kb-driver-fill" style="width: ${Math.min(100, Number(d.share_pct) || 0)}%; background: ${col};"></div>
                   </div>
                   <div class="kb-sub">${esc(d.evidence)}</div>
                 </div>
@@ -363,10 +363,10 @@ export function createKamBrainController({
     if (!actions.length && !brain.commitments.length) return "";
 
     return `
-      <div class="kb-block">
+      <div class="kb-block kb-bento-card">
         <div class="kb-block-head">
           <span>Prioritised Recovery Plan &amp; Seller Commitments</span>
-          <span class="kb-tag ${brain.commitments.length ? "good" : ""}">
+          <span class="kb-tag ${brain.commitments.length ? "good kb-pill-sage" : "kb-pill-amber"}">
             ${brain.commitments.length} Committed
           </span>
         </div>
@@ -374,14 +374,15 @@ export function createKamBrainController({
           ${actions
             .map((a) => {
               const matchedCommit = brain.commitments.find((c) => c.action_id === a.action_id);
+              const priorityPill = a.priority === 1 ? "kb-pill-coral" : a.priority === 2 ? "kb-pill-amber" : "";
               return `
                 <div class="kb-action-card ${matchedCommit ? "committed" : ""}">
                   <div class="kb-action-top">
                     <span class="kb-priority">P${esc(a.priority)} · ${esc(a.action_id)}</span>
-                    <span class="kb-tag">${esc(a.impact)}</span>
+                    <span class="kb-tag ${priorityPill}">${esc(a.impact)}</span>
                     ${
                       matchedCommit
-                        ? `<span class="kb-tag good">Committed · Due: ${esc(matchedCommit.due_date)}</span>`
+                        ? `<span class="kb-tag good kb-pill-sage">Committed · Due: ${esc(matchedCommit.due_date)}</span>`
                         : `<span class="kb-sub">Suggested: ${esc(a.recommended_due)}</span>`
                     }
                   </div>
@@ -404,7 +405,7 @@ export function createKamBrainController({
                 <div class="kb-prior-item">
                   <div class="kb-prior-top">
                     <strong>${esc(c.action_id)}: ${esc(c.action_summary)}</strong>
-                    <span class="kb-tag good">${esc(c.owner)} · Due ${esc(c.due_date)}</span>
+                    <span class="kb-tag good kb-pill-sage">${esc(c.owner)} · Due ${esc(c.due_date)}</span>
                   </div>
                 </div>`
               )
@@ -427,10 +428,10 @@ export function createKamBrainController({
 
   function renderToolLogSection() {
     return `
-      <div class="kb-block">
+      <div class="kb-block kb-bento-card">
         <div class="kb-block-head">
           <span>Live Agent Tool &amp; Failover Audit</span>
-          <span class="kb-tag ${brain.ungroundedTotal === 0 ? "good" : "warn"}">
+          <span class="kb-tag ${brain.ungroundedTotal === 0 ? "good kb-pill-sage" : "warn kb-pill-amber"}">
             ${
               brain.ungroundedTotal === 0
                 ? "Grounding Check: 0 Ungrounded Numbers"
@@ -456,7 +457,7 @@ export function createKamBrainController({
                   .slice(0, 12)
                   .map(
                     (t) => `
-                  <div class="kb-tool-row">
+                  <div class="kb-tool-row kb-audit-row">
                     <span class="kb-tool-name">${esc(t.name)}</span>
                     <span class="kb-tool-src">${esc(t.source)}</span>
                     <span class="kb-tool-ms">${
@@ -482,13 +483,20 @@ export function createKamBrainController({
         ? "Proactive Call (Riya)"
         : "Inbound Call";
 
+    const modeBadgeClass =
+      brain.mode === "followup"
+        ? "good kb-pill-sage"
+        : brain.mode === "proactive"
+        ? "kb-pill-amber"
+        : "kb-pill-coral";
+
     rootEl.innerHTML = `
       <div class="kb-status-strip">
-        <span class="kb-tag">${esc(modeLabel)}</span>
-        <span class="kb-tag">LLM: ${esc(brain.activeProvider || "-")}</span>
+        <span class="kb-tag ${modeBadgeClass}">${esc(modeLabel)}</span>
+        <span class="kb-tag pill-mono">LLM: ${esc(brain.activeProvider || "-")}</span>
         ${
           brain.lastLatency
-            ? `<span class="kb-tag">First Token: ${esc(brain.lastLatency.llm_first_token_ms)} ms · Req/Turn: ${esc(brain.lastLatency.llm_requests)}</span>`
+            ? `<span class="kb-tag pill-mono">First Token: ${esc(brain.lastLatency.llm_first_token_ms)} ms · Req/Turn: ${esc(brain.lastLatency.llm_requests)}</span>`
             : ""
         }
       </div>
@@ -513,12 +521,12 @@ export function createKamBrainController({
     const commits = card.commitments || [];
     const fu = card.followup || {};
     summaryEl.innerHTML = `
-      <div class="summary-card">
+      <div class="summary-card kb-bento-card">
         <div class="kb-block-head">
           <span>Call Summary &amp; Mock WhatsApp Recap</span>
           <div style="display:flex; gap:8px;">
-            <button id="btnCopyWhatsapp" class="btn btn-sm" type="button">Copy WhatsApp Text</button>
-            <button id="btnDownloadSummary" class="btn btn-sm btn-primary" type="button">Download .txt</button>
+            <button id="btnCopyWhatsapp" class="btn-pill btn-glass-sm" type="button">Copy WhatsApp Text</button>
+            <button id="btnDownloadSummary" class="btn-pill btn-coral-sm" type="button">Download .txt</button>
           </div>
         </div>
         <div class="summary-grid">
