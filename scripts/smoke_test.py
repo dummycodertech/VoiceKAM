@@ -65,7 +65,16 @@ def main() -> int:
         ct = rt.headers.get("content-type", "")
         print(f"  TTS Content-Type={ct} | X-TTS-Provider={rt.headers.get('x-tts-provider', 'json-fallback')} | size={len(rt.content)} bytes")
 
-        print(f"[4/5] Checking {base}/api/demo-data ...")
+        print(f"[4/5] Checking {base}/api/scenarios, template & demo-data ...")
+        rsc = client.get(f"{base}/api/scenarios")
+        rsc.raise_for_status()
+        scen_list = rsc.json().get("scenarios") or []
+        assert len(scen_list) >= 4, f"Expected >= 4 scenarios, got {len(scen_list)}"
+
+        rtpl = client.get(f"{base}/api/data/template?format=csv")
+        rtpl.raise_for_status()
+        assert "sku_id" in rtpl.text and "orders_curr" in rtpl.text
+
         rd = client.get(f"{base}/api/demo-data")
         rd.raise_for_status()
         demo = rd.json()
@@ -73,8 +82,9 @@ def main() -> int:
         diag = demo["diagnosis"]
         assert metrics["sales_gmv"]["baseline"] > 0
         assert sum(d["lost_orders"] for d in diag["drivers"]) == diag["total_lost_orders"]
+        assert sum(d["lost_revenue"] for d in diag["drivers"]) == diag["total_lost_revenue"]
         print(
-            f"  Demo data reconciled (orders {metrics['orders']['baseline']} -> {metrics['orders']['current']}, "
+            f"  Demo data reconciled ({len(scen_list)} scenarios; orders {metrics['orders']['baseline']} -> {metrics['orders']['current']}, "
             f"GMV Rs {metrics['sales_gmv']['baseline']:,} -> Rs {metrics['sales_gmv']['current']:,})"
         )
 

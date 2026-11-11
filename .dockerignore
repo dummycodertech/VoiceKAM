@@ -11,4 +11,8 @@ scratch/
 logs/
 *.mp3
 *.wav
+*.zip
+.eval_cache/
+frontend_old_backup/
+
 

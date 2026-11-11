@@ -71,3 +71,8 @@ The original assessment snapshot remains frozen on `main` at tag `v1.0-assessmen
 - Added `docs/RELATED_WORK.md` situating VoiceKAM alongside `ReAct` (`arXiv:2210.03629`), `Toolformer` (`arXiv:2302.04761`), `FActScore` (`arXiv:2305.14251`), and the W3C `Web Speech API` specification.
 - Added `docs/DEMO_SCRIPT.md` (90-second walkthrough on Scenario A *UrbanStride Footwear & Apparel*, custom CSV template upload, and 3-day follow-up review) and `docs/PROJECT_SUMMARY.md` using verified metrics and explicit placeholders for unmeasured live voice metrics.
 - Verified `tests/test_debranding.py` passes (`0` legacy strings across docs and code).
+
+## Phase 9 — Deploy Prep
+- Updated `render.yaml` (`voicekam-virtual-kam`, `plan: free`, `--workers 1`, zero impact on legacy Render services) with Phase 7 security, TTL, upload, and quota environment variables.
+- Updated `.env.example`, `.dockerignore` (excluding `*.zip`, `.eval_cache/`, `frontend_old_backup/`), and `Dockerfile` (OCI metadata labels, `ALLOW_MOCK_LLM=false`, Python native `HEALTHCHECK`, single-worker CMD).
+- Enhanced `scripts/smoke_test.py` to also check `GET /api/scenarios` (`>= 4` scenarios), `GET /api/data/template?format=csv`, and exact revenue reconciliation in `GET /api/demo-data`, and verified end-to-end against a booted Uvicorn instance (`ALL SMOKE CHECKS PASSED`).
