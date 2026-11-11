@@ -334,3 +334,296 @@ async def test_group4_clarify_topics_non_repeating_non_redundant_and_max_3():
         assert "gone out of stock" not in low
     assert session.phase.value in ("DIAGNOSE", "RECOMMEND")
     assert d4["done"]["text"]
+
+
+def _assert_clean_spoken_turn(text: str, speakable: str) -> None:
+    import re
+
+    for sample in (text, speakable):
+        low = sample.lower()
+        assert not re.search(r"\b(?:asp|sku|skus|oos|funnel|funnels)\b", low), f"Forbidden term in spoken output: {sample!r}"
+        assert not re.search(r"\b[A-Z]{2,8}-\d+\b", sample), f"Product/action code in spoken output: {sample!r}"
+        assert not re.search(r"\b\d+\.0+\s*%", sample), f"Trailing .0% in spoken output: {sample!r}"
+        assert "seller partner" not in low, f"Placeholder seller in spoken output: {sample!r}"
+        assert "custom uploaded store" not in low, f"Placeholder store in spoken output: {sample!r}"
+        assert "135,000" not in sample and "200,000" not in sample, f"Western grouping found: {sample!r}"
+
+
+async def test_regression_transcript_1_soft_yes_no_commitments():
+    ctx = _load_brief_context()
+    store = SessionStore()
+    session = store.create(mode="proactive", language="en-IN", seller_context=ctx)
+    router = LLMRouter([MockLLMProvider()])
+    orch = AgentOrchestrator(router)
+
+    turns = []
+    turns.append(await _collect_turn(orch, session, None))
+    turns.append(await _collect_turn(orch, session, "Wait, what happened to my sales? Tell me why."))
+    turns.append(await _collect_turn(orch, session, "What actions do you recommend?"))
+    # Transcript 1 exact soft-yes replies must NEVER record a commitment
+    turns.append(await _collect_turn(orch, session, "okay sounds good"))
+    assert len(session.commitments) == 0
+    turns.append(await _collect_turn(orch, session, "alright"))
+    assert len(session.commitments) == 0
+    turns.append(await _collect_turn(orch, session, "yup"))
+    assert len(session.commitments) == 0
+    summary_turn = await _collect_turn(orch, session, "Please send me the call summary now.")
+    turns.append(summary_turn)
+
+    assert len(session.commitments) == 0
+    assert session.summary_card is not None
+    assert session.summary_card["agreed_actions"] == []
+    assert "*Agreed actions:*\nNone" in session.summary_card["whatsapp_text"]
+    recap = summary_turn["done"]["text"]
+    assert "?" in recap and len(recap.split()) <= 80
+    for t in turns:
+        _assert_clean_spoken_turn(t["done"]["text"], t["done"]["speakable"])
+
+
+async def test_regression_transcript_2_selective_first_action_only():
+    ctx = _load_brief_context()
+    store = SessionStore()
+    session = store.create(mode="proactive", language="en-IN", seller_context=ctx)
+    router = LLMRouter([MockLLMProvider()])
+    orch = AgentOrchestrator(router)
+
+    turns = []
+    turns.append(await _collect_turn(orch, session, None))
+    turns.append(await _collect_turn(orch, session, "Why did sales drop? Check my data and tell me why."))
+    turns.append(await _collect_turn(orch, session, "Okay, tell me the recommended plan."))
+    # Clear yes on 1st action, then selective keep of 1st only and decline others
+    turns.append(await _collect_turn(orch, session, "yes"))
+    assert len(session.commitments) == 1
+    summary_turn = await _collect_turn(orch, session, "lets go ahead with only 1st action point not others")
+    turns.append(summary_turn)
+
+    assert session.phase.value == "SUMMARY"
+    assert len(session.commitments) == 1
+    assert session.summary_card is not None
+    agreed = session.summary_card["agreed_actions"]
+    declined = session.summary_card["declined_actions"]
+    assert len(agreed) == 1
+    assert agreed[0]["action_id"] == session.commitments[0]["action_id"]
+    assert len(declined) >= 1
+    wa = session.summary_card["whatsapp_text"]
+    assert "*Agreed actions:*" in wa and "*Declined or not agreed:*" in wa
+    recap = summary_turn["done"]["text"]
+    assert len(recap.split()) <= 80
+    assert "agreed:" in recap.lower()
+    assert "not agreed:" in recap.lower()
+    for t in turns:
+        _assert_clean_spoken_turn(t["done"]["text"], t["done"]["speakable"])
+
+
+async def test_regression_transcript_3_full_consent_clean_register():
+    ctx = _load_brief_context()
+    store = SessionStore()
+    session = store.create(mode="proactive", language="en-IN", seller_context=ctx)
+    router = LLMRouter([MockLLMProvider()])
+    orch = AgentOrchestrator(router)
+
+    turns = []
+    turns.append(await _collect_turn(orch, session, None))
+    turns.append(await _collect_turn(orch, session, "Yes I have 2 minutes."))
+    turns.append(await _collect_turn(orch, session, "Our supplier restocks were delayed by 10 days."))
+    turns.append(await _collect_turn(orch, session, "Show me the full diagnosis now."))
+    turns.append(await _collect_turn(orch, session, "That is helpful. What should I do?"))
+    turns.append(await _collect_turn(orch, session, "Yes, confirmed."))
+    turns.append(await _collect_turn(orch, session, "Yes, I agree to that too."))
+    turns.append(await _collect_turn(orch, session, "Yes, I commit to this price update as well."))
+
+    assert 2 <= len(session.commitments) <= 3
+    assert session.phase.value == "SUMMARY"
+    assert session.summary_card is not None
+    assert len(session.summary_card["agreed_actions"]) == len(session.commitments)
+    summary_done = turns[-1]["done"]
+    assert len(summary_done["text"].split()) <= 80
+    assert "agreed:" in summary_done["text"].lower()
+    assert "follow-up" in summary_done["text"].lower()
+
+    full_text = " ".join(t["done"]["text"] for t in turns).lower()
+    assert full_text.count("subject to eligibility") <= 1
+    assert session.ungrounded_warnings == []
+    assert session.date_warnings == []
+    assert session.projection_warnings == []
+    assert session.causal_warnings == []
+    for t in turns:
+        d = t["done"]
+        _assert_clean_spoken_turn(d["text"], d["speakable"])
+
+
+def test_group5_frontend_reprompt_timing_and_upload_names_in_greeting():
+    import os
+    import socket
+    import subprocess
+    import sys
+    import time
+    import httpx
+    from playwright.sync_api import sync_playwright
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+
+    base_url = f"http://127.0.0.1:{port}"
+    scratch = ROOT / "scratch"
+    scratch.mkdir(parents=True, exist_ok=True)
+    log_file = open(scratch / "uvicorn_group5_ui.log", "w", encoding="utf-8")
+    env = os.environ.copy()
+    env.update(
+        {
+            "ALLOW_MOCK_LLM": "true",
+            "GROQ_API_KEY": "",
+            "GEMINI_API_KEY": "",
+            "OPENROUTER_API_KEY": "",
+            "TTS_PROVIDER": "browser",
+            "TTS_CACHE_ENABLED": "false",
+            "PORT": str(port),
+        }
+    )
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(port)],
+        stdout=log_file,
+        stderr=subprocess.STDOUT,
+        env=env,
+    )
+
+    speech_stub = """
+    class MockSR {
+      start() { if (this.onstart) this.onstart(); }
+      stop() { if (this.onend) this.onend(); }
+    }
+    window.SpeechRecognition = MockSR;
+    window.webkitSpeechRecognition = MockSR;
+    class MockUtterance {
+      constructor(text) { this.text = text; this.lang = 'en-IN'; this.rate = 1; }
+    }
+    Object.defineProperty(window, 'SpeechSynthesisUtterance', { configurable: true, writable: true, value: MockUtterance });
+    const mockSynth = {
+      getVoices() { return [{ lang: 'en-IN', name: 'MockVoice' }]; },
+      cancel() {},
+      speak(u) { setTimeout(() => { if (u && typeof u.onend === 'function') u.onend(); }, 30); }
+    };
+    Object.defineProperty(window, 'speechSynthesis', { configurable: true, get: () => mockSynth });
+    HTMLMediaElement.prototype.play = function() {
+      setTimeout(() => { if (this.onended) this.onended(); }, 40);
+      return Promise.resolve();
+    };
+    """
+
+    try:
+        ready = False
+        for _ in range(60):
+            try:
+                if httpx.get(f"{base_url}/api/health", timeout=1.5).status_code == 200:
+                    ready = True
+                    break
+            except Exception:
+                time.sleep(0.3)
+        assert ready, "Server did not start for Group 5 UI test"
+
+        with sync_playwright() as p:
+            try:
+                browser = p.chromium.launch(channel="chrome", headless=True)
+            except Exception:
+                browser = p.chromium.launch(headless=True)
+
+            context = browser.new_context(viewport={"width": 1280, "height": 860})
+            page = context.new_page()
+            page.add_init_script(speech_stub)
+            page.goto(base_url, wait_until="networkidle")
+
+            # 1. Fill custom upload fields & CSV -> custom shop + seller names must appear in the call greeting
+            page.click("#btnDataModeUpload")
+            page.set_input_files("#fileSkuDataset", str(ROOT / "brief_scenario_skus.csv"))
+            page.set_input_files("#fileCancelDataset", str(ROOT / "brief_scenario_cancellations.csv"))
+            page.fill("#txtUploadShop", "Loom and Craft Studio")
+            page.fill("#txtUploadSeller", "Meera Joshi")
+            page.click("#btnValidateUpload")
+            page.wait_for_function(
+                "() => document.querySelector('#datasetSummary').innerText.includes('Loom and Craft Studio')",
+                timeout=8000,
+            )
+
+            page.select_option("#selMode", "inbound")
+            page.click("#btnStartCall")
+            page.wait_for_selector('#micOrb[data-state="listening"]', timeout=10000)
+
+            greet_caps = page.evaluate("() => [...document.querySelectorAll('.caption-line.kam')].map(n => n.innerText)")
+            assert len(greet_caps) == 1
+            assert "Meera Joshi" in greet_caps[0]
+            assert "Loom and Craft Studio" in greet_caps[0]
+
+            # 2. First-turn silence must wait 8s (NOT fire at 6.3s, fire by ~8.5s)
+            page.wait_for_timeout(6300)
+            caps_mid = page.evaluate("() => [...document.querySelectorAll('.caption-line.kam')].map(n => n.innerText)")
+            assert len(caps_mid) == 1, f"Reprompted too early before 8s: {caps_mid}"
+
+            page.wait_for_function(
+                "() => document.querySelectorAll('.caption-line.kam').length >= 2",
+                timeout=4000,
+            )
+            caps_after_first = page.evaluate("() => [...document.querySelectorAll('.caption-line.kam')].map(n => n.innerText)")
+            assert len(caps_after_first) == 2
+            assert "still there" in caps_after_first[1].lower()
+            assert "Meera Joshi" in caps_after_first[1]
+            assert "seller partner" not in caps_after_first[1].lower()
+
+            # 3. Subsequent user turn silence must NOT reprompt a second time (once per call)
+            page.click("#btnToggleDebug")
+            before_done = int(page.evaluate("() => document.body.dataset.completedStreams"))
+            page.fill("#txtDebugInput", "Yes my sales dropped last month.")
+            page.click("#btnSendDebug")
+            page.wait_for_function(
+                f"() => Number(document.body.dataset.completedStreams) > {before_done}",
+                timeout=15000,
+            )
+            page.wait_for_selector('#micOrb[data-state="listening"]', timeout=8000)
+            page.wait_for_timeout(6600)
+            caps_once = page.evaluate("() => [...document.querySelectorAll('.caption-line.kam')].length")
+            assert caps_once == 3, f"Expected no second reprompt in same call, got {caps_once} KAM messages"
+            page.click("#btnEndCall")
+
+            # 4. Call 2: Seller speaks on turn 0 -> subsequent silence triggers 6s reprompt
+            page.click("#btnStartCall")
+            page.wait_for_selector('#micOrb[data-state="listening"]', timeout=10000)
+            before_c2 = int(page.evaluate("() => document.body.dataset.completedStreams"))
+            page.fill("#txtDebugInput", "Hello, please check my store.")
+            page.click("#btnSendDebug")
+            page.wait_for_function(
+                f"() => Number(document.body.dataset.completedStreams) > {before_c2}",
+                timeout=15000,
+            )
+            page.wait_for_selector('#micOrb[data-state="listening"]', timeout=8000)
+            page.wait_for_timeout(4200)
+            assert page.evaluate("() => document.querySelectorAll('.caption-line.kam').length") == 2
+            page.wait_for_function(
+                "() => document.querySelectorAll('.caption-line.kam').length >= 3",
+                timeout=3500,
+            )
+            page.click("#btnEndCall")
+
+            # Also verify JSON upload honors seller_meta form overrides via API
+            tpl_json_bytes = httpx.get(f"{base_url}/api/data/template?format=json", timeout=5.0).content
+            r_json = httpx.post(
+                f"{base_url}/api/data/validate",
+                files={"file": ("brief.json", tpl_json_bytes, "application/json")},
+                data={"shop_name": "Kaveri Home Store", "seller_name": "Vikram Nair"},
+                timeout=10.0,
+            )
+            assert r_json.status_code == 200 and r_json.json()["valid"] is True
+            ds_id = r_json.json()["dataset_id"]
+            r_demo = httpx.get(f"{base_url}/api/demo-data", params={"dataset_id": ds_id}, timeout=5.0)
+            assert r_demo.status_code == 200
+            sel_meta = r_demo.json()["overview"]["seller"]
+            assert sel_meta["shop_name"] == "Kaveri Home Store"
+            assert sel_meta["seller_name"] == "Vikram Nair"
+
+            browser.close()
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except Exception:
+            proc.kill()
+        log_file.close()

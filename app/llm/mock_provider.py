@@ -322,15 +322,17 @@ class MockLLMProvider(LLMProvider):
             pace_pct = _clean_pct_str(fu_m.get("sales_vs_crisis_pct", 0))
             fu_oos = fu_m.get("out_of_stock_skus")
             oos_txt = f" and out-of-stock items are {fu_oos}" if fu_oos is not None else ""
+            store_txt = f" on {shop_name}" if shop_name and shop_name != "your store" else ""
             return (
-                f"Namaste{sal_comma}, calling for our check-in. "
+                f"Namaste{sal_comma}, calling for our check-in{store_txt}. "
                 f"Your sales pace moved {pace_pct}% to {format_inr(pace)}{oos_txt}. Should we review remaining blockers?"
             )
 
         if phase == "GREETING":
             oos_txt = f" and {oos_curr} products went out of stock" if oos_curr is not None else ""
+            store_txt = f" for {shop_name}" if shop_name and shop_name != "your store" else ""
             return (
-                f"Namaste{sal_comma}, I noticed your sales moved {sales_pct}% to {format_inr(sales_curr)}{oos_txt}. "
+                f"Namaste{sal_comma}, calling{store_txt} — your sales moved {sales_pct}% to {format_inr(sales_curr)}{oos_txt}. "
                 "Do you have 2 minutes to review this together?"
             )
 

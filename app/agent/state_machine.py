@@ -566,14 +566,14 @@ def _phase_instruction(
     if p == Phase.GREETING:
         if session.mode == "followup" and fu:
             return (
-                f"GOAL: Greet {salutation} warmly for your follow-up call, cite the updated pace "
+                f"GOAL: Greet {salutation} at {shop_name} warmly for your follow-up call, cite the updated pace "
                 f"({format_inr(fu['sales_gmv_pace'])} monthly pace, OOS {fu['out_of_stock_skus']}, "
                 f"cancellations {fu['cancellation_rate_pct']}%), and ask if they have 2 minutes to review remaining blockers."
             )
         if session.mode == "proactive":
             oos_note = f" and {oos_curr} products are out of stock" if oos_curr is not None else ""
             return (
-                f"GOAL: Open proactively—state sales moved {sales_pct}% to {format_inr(sales_curr)}{oos_note}, "
+                f"GOAL: Open proactively — greet {salutation} and mention {shop_name}, state sales moved {sales_pct}% to {format_inr(sales_curr)}{oos_note}, "
                 f"and ask if {salutation} has 2 minutes to review this together."
             )
         return f"GOAL: Greet {salutation} warmly and ask how you can help {shop_name} today."

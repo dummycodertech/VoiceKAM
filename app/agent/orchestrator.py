@@ -427,12 +427,12 @@ class AgentOrchestrator:
             if session.language == "hi-IN":
                 greeting = (
                     f"नमस्ते {salutation}, मैं {settings.agent_name_devanagari} हूँ, आपकी मार्केटप्लेस अकाउंट मैनेजर। "
-                    "आज मैं आपकी क्या मदद कर सकती हूँ?"
+                    f"आज मैं {shop_name} की क्या मदद कर सकती हूँ?"
                 )
             elif session.language == "hinglish":
                 greeting = (
                     f"Namaste {salutation}, main {settings.agent_name} bol rahi hoon, aapki marketplace account manager. "
-                    "Aaj main aapki kya help kar sakti hoon?"
+                    f"Aaj main {shop_name} ki kya help kar sakti hoon?"
                 )
             else:
                 greeting = (
