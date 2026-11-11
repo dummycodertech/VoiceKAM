@@ -9,15 +9,16 @@ export function createVoiceViz({canvas,getState,getTts}){
   const lv=new Float32Array(BARS),tg=new Float32Array(BARS),sm=new Float32Array(BARS);
   const env=Float32Array.from({length:BARS},(_,i)=>Math.exp(-Math.pow((i/(BARS-1)*2-1)/.58,2)));   // centre-peaked silhouette
   const ph=Float32Array.from({length:BARS},()=>Math.random()*6.28);
-  let W=0,H=0,bufT=null,bufM=null,micAn=null,micCtx=null,micStream=null,micBusy=false,micFail=false,wantMic=false;
+  let W=0,H=0,bufT=null,bufM=null,micAn=null,micCtx=null,micStream=null,micBusy=false,micFail=false,wantMic=false,micEnabled=USE_MIC;
   let rafId=null;
 
   // >>> MIC ANALYSER (read-only, never routed to speakers) -------------------
   async function startMic(){
+    if(!micEnabled||!navigator.mediaDevices?.getUserMedia)return;
     micBusy=true;
     try{
       const s=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});
-      if(!wantMic){s.getTracks().forEach(t=>t.stop());micBusy=false;return}
+      if(!wantMic||!micEnabled){s.getTracks().forEach(t=>t.stop());micBusy=false;return}
       const C=window.AudioContext||window.webkitAudioContext,c=new C(),a=c.createAnalyser();
       a.fftSize=256;a.smoothingTimeConstant=.7;c.createMediaStreamSource(s).connect(a);
       micStream=s;micCtx=c;micAn=a;
@@ -28,6 +29,8 @@ export function createVoiceViz({canvas,getState,getTts}){
     wantMic=false;micStream?.getTracks().forEach(t=>t.stop());micCtx?.close().catch(()=>{});
     micStream=micCtx=micAn=null;
   }
+  function disableMic(){micEnabled=false;stopMic()}
+  function resetMic(){micEnabled=USE_MIC;micFail=false}
 
   // >>> TARGET HEIGHTS PER STATE ---------------------------------------------
   const bin=(buf,i)=>{const x=Math.abs(i/(BARS-1)*2-1);return(buf[1+Math.floor(Math.pow(x,.8)*30)]||0)/255};   // low frequencies sit at the centre
@@ -82,7 +85,7 @@ export function createVoiceViz({canvas,getState,getTts}){
   function step(now){
     rafId=null;
     const st=getState?.()||"idle";
-    if(USE_MIC&&st==="listening"){wantMic=true;if(!micAn&&!micBusy&&!micFail)startMic()}
+    if(micEnabled&&st==="listening"){wantMic=true;if(!micAn&&!micBusy&&!micFail)startMic()}
     targets(st,(now-t0)/1000);
     let maxDiff=0;
     for(let i=0;i<BARS;i++){
@@ -104,5 +107,5 @@ export function createVoiceViz({canvas,getState,getTts}){
   new ResizeObserver(size).observe(canvas);size();
   document.addEventListener("visibilitychange",()=>{if(!document.hidden)schedule()});
   schedule();
-  return{stopMic,onStateChange:schedule};
+  return{stopMic,disableMic,resetMic,onStateChange:schedule};
 }

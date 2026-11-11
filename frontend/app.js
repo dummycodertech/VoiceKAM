@@ -3,16 +3,24 @@ import{createKamBrainController}from"/static/kam_brain.js";
 import{createVoiceViz}from"/static/viz.js";
 const S={
   inCall:false,sessionId:null,mode:"inbound",language:"en-IN",headphones:false,tts:"auto",
-  orb:"idle",t0:0,timer:null,rec:null,recognizing:false,eou:null,silence:null,reprompted:false,userTurns:0,
+  orb:"idle",t0:0,timer:null,rec:null,recTimer:null,recognizing:false,recFatal:false,audioCaptureRetried:false,
+  sttMode:"webspeech",whisperFallback:false,
+  mr:null,mrStream:null,mrCtx:null,mrRaf:null,mrSpoke:false,mrFinish:null,mrTimer:null,
+  eou:null,silence:null,reprompted:false,userTurns:0,
   interim:"",final:"",sttEnd:0,abort:null,done:0,hook:null,viz:null,
   projectName:"VoiceKAM",agentName:"Metis",sellerSalutation:"",
   dataSource:"demo",scenarioId:"A",datasetId:null,scenarios:[]
 };
 const el={};
 const $=id=>document.getElementById(id);
+const canWhisperFallback=()=>Boolean(S.whisperFallback&&navigator.mediaDevices?.getUserMedia&&window.MediaRecorder);
 const orbCopy=s=>{
   const a=S.agentName;
-  if(s==="listening")return["Listening",`Go ahead, ${a} replies after a short pause`];
+  if(s==="listening"){
+    if(S.recFatal)return["Mic off","Microphone unavailable — fix browser permission or use Type instead"];
+    if(S.sttMode==="whisper")return["Listening",S.mrSpoke?"Hearing you… pause or tap orb to send":`Listening via backup mic, speak to ${a}`];
+    return["Listening",`Go ahead, ${a} replies after a short pause`];
+  }
   if(s==="thinking")return["Checking",`${a} is looking at your store data`];
   if(s==="speaking")return["Speaking",""];
   return["Ready",`Press Start call to talk with ${a}`];
@@ -69,7 +77,32 @@ function phases(active,mode=S.mode){
     if(k===active){p.classList.add("active");seen=true}else if(!seen)p.classList.add("done");
   });
 }
-function stopRec(){clearTimeout(S.eou);clearTimeout(S.silence);if(S.rec&&S.recognizing){try{S.rec.stop()}catch{}}S.recognizing=false}
+function stopWhisperRec(){
+  clearTimeout(S.mrTimer);S.mrTimer=null;
+  if(S.mrRaf){cancelAnimationFrame(S.mrRaf);S.mrRaf=null}
+  S.mrFinish=null;S.mrSpoke=false;
+  const mr=S.mr;S.mr=null;
+  if(mr&&mr.state!=="inactive"){try{mr.onstop=null;mr.stop()}catch{}}
+  S.mrStream?.getTracks().forEach(t=>t.stop());S.mrStream=null;
+  S.mrCtx?.close().catch(()=>{});S.mrCtx=null;
+}
+function stopRec(){
+  clearTimeout(S.eou);clearTimeout(S.silence);clearTimeout(S.recTimer);S.recTimer=null;
+  const r=S.rec;S.rec=null;
+  if(r){try{r.onend=null;r.onerror=null;r.stop()}catch{}}
+  S.recognizing=false;
+  stopWhisperRec();
+  S.viz?.stopMic?.();
+}
+function warmMicPermission(){
+  if(!navigator.mediaDevices?.getUserMedia)return;
+  navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}}).then(s=>{
+    s.getTracks().forEach(t=>t.stop());
+    if(S.inCall&&S.orb==="listening"&&S.recFatal){
+      S.recFatal=false;el.errorBanner.classList.add("hidden");listen();
+    }
+  }).catch(()=>{});
+}
 function armSilence(){
   clearTimeout(S.silence);if(!S.inCall||S.reprompted)return;
   const waitMs=S.userTurns===0?8000:6000;
@@ -78,14 +111,101 @@ function armSilence(){
     S.reprompted=true;const t=repromptText(S.language);caption("kam",t);queue.enqueueSentence(t);
   },waitMs);
 }
-function listen(){
-  if(!S.inCall)return;
-  setOrb("listening");S.interim=S.final="";armSilence();
-  const C=SR();if(!C){el.browserBanner.classList.remove("hidden");return}
-  if(S.recognizing)return;
+async function startWhisperRec(){
+  if(!S.inCall||S.orb!=="listening"||S.mr||S.recFatal)return;
+  if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder){
+    S.recFatal=true;setOrb("listening");showError("Browser microphone capture is unavailable. Switch to Chrome/Edge or use Type instead.");return;
+  }
+  S.viz?.disableMic?.();
+  let stream;
   try{
-    const r=new C();r.lang=S.language==="hi-IN"?"hi-IN":"en-IN";r.interimResults=true;r.continuous=true;r.maxAlternatives=1;
-    r.onstart=()=>{S.recognizing=true};
+    stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});
+  }catch(err){
+    if(!S.inCall)return;
+    const n=err?.name||"";
+    S.recFatal=true;setOrb("listening");
+    if(n==="NotAllowedError"||n==="PermissionDeniedError")showError("Microphone permission is blocked. Allow mic access in your browser address bar, or use Type instead.");
+    else showError("Could not access your microphone ("+(n||err?.message||"device error")+"). Check Windows Sound/Privacy settings, or use Type instead.");
+    return;
+  }
+  if(!S.inCall||S.orb!=="listening"||S.sttMode!=="whisper"){stream.getTracks().forEach(t=>t.stop());return}
+  const mime=["audio/webm;codecs=opus","audio/webm","audio/ogg;codecs=opus","audio/mp4",""].find(m=>!m||MediaRecorder.isTypeSupported(m));
+  let mr;
+  try{mr=mime?new MediaRecorder(stream,{mimeType:mime}):new MediaRecorder(stream)}
+  catch{mr=new MediaRecorder(stream)}
+  const AC=window.AudioContext||window.webkitAudioContext;
+  let ctx=null,an=null,buf=null;
+  if(AC){
+    try{ctx=new AC();an=ctx.createAnalyser();an.fftSize=1024;ctx.createMediaStreamSource(stream).connect(an);buf=new Uint8Array(an.fftSize)}catch{}
+  }
+  const chunks=[];let lastVoiceAt=0,startedAt=performance.now(),finishing=false;
+  S.mr=mr;S.mrStream=stream;S.mrCtx=ctx;S.mrSpoke=false;
+  const finish=()=>{
+    if(finishing||S.mr!==mr)return;
+    finishing=true;
+    if(S.mrRaf){cancelAnimationFrame(S.mrRaf);S.mrRaf=null}
+    S.mrFinish=null;
+    if(mr.state!=="inactive"){try{mr.stop()}catch{}}
+  };
+  S.mrFinish=finish;
+  mr.ondataavailable=e=>{if(e.data&&e.data.size>0)chunks.push(e.data)};
+  mr.onstop=async()=>{
+    const spoke=S.mrSpoke;
+    stream.getTracks().forEach(t=>t.stop());ctx?.close().catch(()=>{});
+    if(S.mr===mr){S.mr=null;S.mrStream=null;S.mrCtx=null;S.mrSpoke=false;S.mrFinish=null}
+    if(!S.inCall||S.orb!=="listening")return;
+    const blob=new Blob(chunks,{type:mr.mimeType||mime||"audio/webm"});
+    if(!spoke||blob.size<1000){startWhisperRec();return}
+    setOrb("thinking");
+    try{
+      const fd=new FormData();
+      fd.append("audio",blob,"speech.webm");
+      fd.append("language",S.language==="hi-IN"?"hi-IN":"en-IN");
+      const resp=await fetch("/api/stt",{method:"POST",body:fd});
+      if(!resp.ok)throw new Error(await readApiError(resp,`Speech transcription failed (${resp.status})`));
+      const data=await resp.json();
+      const txt=(data?.text||"").trim();
+      if(txt){say(txt)}else if(S.inCall){listen()}
+    }catch(err){
+      showError(err?.message||"Could not transcribe microphone audio.");
+      if(S.inCall)listen();
+    }
+  };
+  try{mr.start(250)}catch(err){stream.getTracks().forEach(t=>t.stop());ctx?.close().catch(()=>{});S.mr=null;S.recFatal=true;setOrb("listening");showError("Could not start audio recorder: "+err.message);return}
+  const tick=now=>{
+    if(S.mr!==mr||finishing)return;
+    if(an&&buf){
+      an.getByteTimeDomainData(buf);
+      let sum=0;for(let i=0;i<buf.length;i++){const v=(buf[i]-128)/128;sum+=v*v}
+      const rms=Math.sqrt(sum/buf.length);
+      if(rms>0.025){
+        lastVoiceAt=now;
+        if(!S.mrSpoke){S.mrSpoke=true;clearTimeout(S.silence);setOrb("listening")}
+      }
+    }
+    if(S.mrSpoke&&(now-lastVoiceAt>950||now-startedAt>14000)){finish();return}
+    if(!S.mrSpoke&&now-startedAt>18000){
+      stopWhisperRec();
+      if(S.inCall&&S.orb==="listening")startWhisperRec();
+      return;
+    }
+    S.mrRaf=requestAnimationFrame(tick);
+  };
+  S.mrRaf=requestAnimationFrame(tick);
+}
+function startSpeechRec(langOverride=null){
+  const C=SR();
+  if(!C){
+    if(canWhisperFallback()){S.sttMode="whisper";setOrb("listening");startWhisperRec();return}
+    el.browserBanner.classList.remove("hidden");return;
+  }
+  if(S.recognizing||S.rec||S.recFatal||!S.inCall)return;
+  let fatal=false,switching=false,delay=180;
+  try{
+    const r=new C();
+    r.lang=langOverride||(S.language==="hi-IN"?"hi-IN":"en-IN");
+    r.interimResults=true;r.continuous=true;r.maxAlternatives=1;
+    r.onstart=()=>{if(S.rec===r)S.recognizing=true};
     r.onspeechstart=()=>{clearTimeout(S.silence);if(S.headphones&&queue.isPlaying)interrupt()};
     r.onresult=e=>{
       clearTimeout(S.silence);let f="",i="";
@@ -100,10 +220,69 @@ function listen(){
         stopRec();say(send);
       },800);
     };
-    r.onerror=e=>{S.recognizing=false;if(["not-allowed","service-not-allowed"].includes(e.error))showError("Microphone is blocked. Allow mic access in the browser, or use Type instead.")};
-    r.onend=()=>{S.recognizing=false;if(S.inCall&&(S.orb==="listening"||S.headphones))setTimeout(()=>{if(S.inCall&&(S.orb==="listening"||S.headphones)&&!S.recognizing){try{r.start()}catch{}}},180)};
+    r.onerror=e=>{
+      S.recognizing=false;
+      const err=e?.error||"";
+      if(err==="no-speech")return;
+      if(err==="aborted"){delay=260;return}
+      if(err==="not-allowed"){
+        fatal=true;S.recFatal=true;setOrb("listening");
+        showError("Microphone permission is blocked. Click the lock/mic icon in your browser address bar to Allow Microphone, or use Type instead.");
+        return;
+      }
+      if(err==="service-not-allowed"||err==="network"){
+        if(canWhisperFallback()){
+          fatal=true;switching=true;S.sttMode="whisper";
+          try{r.onend=null;r.stop()}catch{}
+          S.rec=null;setOrb("listening");startWhisperRec();return;
+        }
+        fatal=true;S.recFatal=true;setOrb("listening");
+        showError(err==="network"
+          ?"Browser speech recognition could not reach its cloud service (network/firewall blocked). Use Chrome/Edge online, or use Type instead."
+          :"Speech recognition service is blocked in this browser. Allow mic/speech access in browser settings, or use Type instead.");
+        return;
+      }
+      if(err==="audio-capture"){
+        if(!S.audioCaptureRetried){
+          S.audioCaptureRetried=true;S.viz?.disableMic?.();delay=300;return;
+        }
+        if(canWhisperFallback()){
+          fatal=true;switching=true;S.sttMode="whisper";
+          try{r.onend=null;r.stop()}catch{}
+          S.rec=null;setOrb("listening");startWhisperRec();return;
+        }
+        fatal=true;S.recFatal=true;setOrb("listening");
+        showError("No working microphone audio detected. Check Windows Sound/Privacy microphone settings or close other apps using your mic, or use Type instead.");
+        return;
+      }
+      if(err==="language-not-supported"&&r.lang!=="en-IN"){
+        fatal=true;switching=true;S.rec=null;startSpeechRec("en-IN");return;
+      }
+      fatal=true;S.recFatal=true;setOrb("listening");
+      showError("Microphone error ("+(err||"unknown")+"). Check mic permissions or use Type instead.");
+    };
+    r.onend=()=>{
+      S.recognizing=false;
+      if(S.rec===r)S.rec=null;
+      if(!fatal&&!switching&&!S.recFatal&&S.sttMode==="webspeech"&&S.inCall&&(S.orb==="listening"||S.headphones)){
+        clearTimeout(S.recTimer);
+        S.recTimer=setTimeout(()=>{if(!S.recFatal&&S.sttMode==="webspeech"&&S.inCall&&(S.orb==="listening"||S.headphones)&&!S.recognizing&&!S.rec)startSpeechRec(langOverride)},delay);
+      }
+    };
     S.rec=r;r.start();
-  }catch(err){showError("Speech recognition is unavailable: "+err.message)}
+  }catch(err){
+    if(canWhisperFallback()){S.sttMode="whisper";setOrb("listening");startWhisperRec();return}
+    S.recFatal=true;setOrb("listening");showError("Speech recognition is unavailable: "+err.message);
+  }
+}
+function listen(){
+  if(!S.inCall)return;
+  setOrb("listening");S.interim=S.final="";armSilence();
+  if(S.sttMode==="whisper"||!SR()){
+    if(canWhisperFallback()){S.sttMode="whisper";setOrb("listening");startWhisperRec();return}
+    el.browserBanner.classList.remove("hidden");return;
+  }
+  startSpeechRec();
 }
 export function interrupt(){   // order matters: audio first, then stream, then mic
   if(!S.inCall)return;
@@ -213,7 +392,9 @@ export async function startCall({modeOverride=null,priorSessionId=null}={}){
   if(modeOverride){S.mode=modeOverride;el.selMode.value=modeOverride}else S.mode=el.selMode.value;
   S.language=el.selLanguage.value;S.headphones=el.chkHeadphones.checked;S.tts=el.selTtsProvider.value;
   queue.configure({language:S.language,ttsProvider:S.tts});
-  S.inCall=true;S.reprompted=false;S.userTurns=0;el.captionsBox.innerHTML="";el.summaryCardSection.classList.add("hidden");
+  S.inCall=true;S.reprompted=false;S.userTurns=0;S.recFatal=false;S.audioCaptureRetried=false;S.sttMode=SR()?"webspeech":"whisper";
+  S.viz?.resetMic?.();warmMicPermission();
+  el.captionsBox.innerHTML="";el.summaryCardSection.classList.add("hidden");
   el.btnStartCall.disabled=true;el.btnEndCall.disabled=false;
   setDatasetControlsDisabled(true);
   queue.playRingtone();setOrb("thinking");   // ringtone runs inside the click so audio is unlocked
@@ -242,7 +423,7 @@ export async function startCall({modeOverride=null,priorSessionId=null}={}){
   }catch(e){showError(e.message);endCall()}
 }
 export function endCall(){
-  S.inCall=false;clearInterval(S.timer);stopRec();queue.stopAll();S.viz?.stopMic();
+  S.inCall=false;S.recFatal=false;S.audioCaptureRetried=false;clearInterval(S.timer);stopRec();queue.stopAll();S.viz?.stopMic();
   if(S.abort){S.abort.abort();S.abort=null}
   setOrb("idle");el.btnStartCall.disabled=false;el.btnEndCall.disabled=true;el.btnInterrupt.disabled=true;
   setDatasetControlsDisabled(false);
@@ -319,11 +500,14 @@ async function init(){
   S.hook=createKamBrainController({rootEl:el.kamBrainRoot,summaryEl:el.summaryCardSection,getBranding:()=>({agentName:S.agentName,projectName:S.projectName})});
   S.viz=createVoiceViz({canvas:$("spectrum"),getState:()=>S.orb,getTts:()=>queue.analyser()});
   phases("GREETING",el.selMode.value);setOrb("idle");
-  if(!SR())el.browserBanner.classList.remove("hidden");
   try{
     const[h,sc,d]=await Promise.all([fetch("/api/health"),fetch("/api/scenarios"),fetch("/api/demo-data?scenario=A")]);
     let hj=null,dj=null;
-    if(h.ok){hj=await h.json();if(!hj.active_llm_chain?.length)showError("No LLM keys are configured. Add GROQ_API_KEY or GEMINI_API_KEY to .env.")}
+    if(h.ok){
+      hj=await h.json();
+      S.whisperFallback=Boolean(hj?.features?.whisper_stt_fallback);
+      if(!hj.active_llm_chain?.length)showError("No LLM keys are configured. Add GROQ_API_KEY or GEMINI_API_KEY to .env.");
+    }
     if(sc.ok){
       const sj=await sc.json();
       S.scenarios=sj.scenarios||[];
@@ -337,6 +521,7 @@ async function init(){
     if(d.ok){dj=await d.json();S.hook.onDemoData(dj);renderDatasetSummary(dj)}
     applyBranding(hj?.branding,dj?.overview?.seller);
   }catch{}
+  if(!SR()&&!canWhisperFallback())el.browserBanner.classList.remove("hidden");
 
   el.btnDataModeDemo.onclick=()=>setDataSourceMode("demo");
   el.btnDataModeUpload.onclick=()=>setDataSourceMode("upload");
@@ -352,10 +537,17 @@ async function init(){
   el.btnDismissError.onclick=()=>el.errorBanner.classList.add("hidden");
   el.btnFollowup.onclick=()=>startCall({modeOverride:"followup",priorSessionId:S.sessionId});
   el.selMode.onchange=()=>{S.mode=el.selMode.value;phases("GREETING",S.mode)};
-  el.micOrb.onclick=()=>{if(!S.inCall)startCall();else if(S.orb==="speaking")interrupt()};
+  el.micOrb.onclick=()=>{
+    if(!S.inCall){startCall();return}
+    if(S.orb==="speaking"){interrupt();return}
+    if(S.orb==="listening"){
+      if(S.sttMode==="whisper"&&S.mr&&S.mrSpoke&&S.mrFinish){S.mrFinish();return}
+      if(S.recFatal||(!S.recognizing&&!S.mr)){S.recFatal=false;S.audioCaptureRetried=false;el.errorBanner.classList.add("hidden");listen()}
+    }
+  };
   el.selLanguage.onchange=()=>{
     S.language=el.selLanguage.value;queue.configure({language:S.language});
-    if(S.recognizing){stopRec();if(S.orb==="listening"||S.headphones)listen()}
+    if(S.recognizing||S.mr){stopRec();if(S.orb==="listening"||S.headphones)listen()}
     if(S.sessionId)fetch(`/api/session/${S.sessionId}/settings`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({language:S.language})}).catch(()=>{});
   };
   el.chkHeadphones.onchange=()=>{S.headphones=el.chkHeadphones.checked};

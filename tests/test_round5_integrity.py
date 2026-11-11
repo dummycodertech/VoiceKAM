@@ -715,3 +715,224 @@ def test_group5_frontend_reprompt_timing_and_upload_names_in_greeting():
         except Exception:
             proc.kill()
         log_file.close()
+
+
+def test_frontend_mic_error_recovery_and_whisper_fallback():
+    """Verify audio-capture retries once & surfaces errors instead of looping, and network fallback hits /api/stt."""
+    import json
+    import os
+    import socket
+    import subprocess
+    import sys
+    import time
+    import httpx
+    from playwright.sync_api import sync_playwright
+
+    scratch_dir = ROOT / "scratch"
+    scratch_dir.mkdir(parents=True, exist_ok=True)
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    base_url = f"http://127.0.0.1:{port}"
+    log_file = open(scratch_dir / "uvicorn_mic_fix.log", "w", encoding="utf-8")
+    env = os.environ.copy()
+    env.update(
+        {
+            "ALLOW_MOCK_LLM": "true",
+            "GROQ_API_KEY": "",
+            "GEMINI_API_KEY": "",
+            "OPENROUTER_API_KEY": "",
+            "TTS_PROVIDER": "browser",
+            "TTS_CACHE_ENABLED": "false",
+            "PORT": str(port),
+        }
+    )
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(port)],
+        stdout=log_file,
+        stderr=subprocess.STDOUT,
+        env=env,
+    )
+
+    try:
+        ready = False
+        for _ in range(60):
+            try:
+                if httpx.get(f"{base_url}/api/health", timeout=1.5).status_code == 200:
+                    ready = True
+                    break
+            except Exception:
+                time.sleep(0.3)
+        assert ready, "Server did not start for mic test"
+
+        with sync_playwright() as p:
+            try:
+                browser = p.chromium.launch(channel="chrome", headless=True)
+            except Exception:
+                browser = p.chromium.launch(headless=True)
+
+            # Case 1: audio-capture retries once cleanly (disabling viz mic), then shows error & stops looping
+            ctx1 = browser.new_context(viewport={"width": 1280, "height": 860})
+            page1 = ctx1.new_page()
+            page1.add_init_script(
+                """
+                window.__srStarts = 0;
+                class AudioCaptureFailSR {
+                  start() {
+                    window.__srStarts += 1;
+                    setTimeout(() => {
+                      if (this.onerror) this.onerror({ error: 'audio-capture' });
+                      if (this.onend) this.onend();
+                    }, 25);
+                  }
+                  stop() {}
+                }
+                window.SpeechRecognition = AudioCaptureFailSR;
+                window.webkitSpeechRecognition = AudioCaptureFailSR;
+                class MockUtterance { constructor(t) { this.text = t; this.lang = 'en-IN'; this.rate = 1; } }
+                Object.defineProperty(window, 'SpeechSynthesisUtterance', { configurable: true, writable: true, value: MockUtterance });
+                const mockSynth = {
+                  getVoices() { return [{ lang: 'en-IN', name: 'MockVoice' }]; },
+                  cancel() {},
+                  speak(u) { setTimeout(() => { if (u && typeof u.onend === 'function') u.onend(); }, 20); }
+                };
+                Object.defineProperty(window, 'speechSynthesis', { configurable: true, get: () => mockSynth });
+                HTMLMediaElement.prototype.play = function() {
+                  setTimeout(() => { if (this.onended) this.onended(); }, 40);
+                  return Promise.resolve();
+                };
+                """
+            )
+            page1.goto(base_url, wait_until="networkidle")
+            page1_errs: list[str] = []
+            page1.on("pageerror", lambda e: page1_errs.append(str(e)))
+            page1.on("console", lambda m: page1_errs.append(m.text) if m.type == "error" else None)
+            page1.click("#btnStartCall")
+            try:
+                page1.wait_for_selector("#errorBanner:not(.hidden)", timeout=8000)
+            except Exception as exc:
+                diag = page1.evaluate(
+                    "() => ({sr: window.__srStarts, orb: document.getElementById('micOrb')?.dataset.state, orbTxt: document.getElementById('micOrb')?.innerText, tts: document.getElementById('ttsBadge')?.innerText, streams: document.body.dataset.completedStreams, errCls: document.getElementById('errorBanner')?.className, errTxt: document.getElementById('errorBannerText')?.innerText})"
+                )
+                raise AssertionError(f"Case 1 timeout: diag={diag}, errs={page1_errs}") from exc
+            starts_after_err = page1.evaluate("() => window.__srStarts")
+            err_msg = page1.inner_text("#errorBannerText").lower()
+            assert starts_after_err == 2, f"Expected 1 self-heal retry (2 starts total), got {starts_after_err}"
+            assert "microphone" in err_msg
+            assert page1.inner_text("#micOrb").strip() == "Mic off"
+            page1.wait_for_timeout(500)
+            assert page1.evaluate("() => window.__srStarts") == 2, "Must not spin indefinitely on fatal audio-capture"
+            ctx1.close()
+
+            # Case 2: network error on Web Speech auto-switches to /api/stt Whisper backup when advertised
+            ctx2 = browser.new_context(viewport={"width": 1280, "height": 860})
+            page2 = ctx2.new_page()
+
+            def _mock_health(route):
+                resp = route.fetch()
+                body = resp.json()
+                body.setdefault("features", {})["whisper_stt_fallback"] = True
+                route.fulfill(status=200, content_type="application/json", body=json.dumps(body))
+
+            page2.route("**/api/health", _mock_health)
+            page2.route(
+                "**/api/stt",
+                lambda route: route.fulfill(
+                    status=200,
+                    content_type="application/json",
+                    body=json.dumps({"text": "Why did my orders drop?", "provider": "groq-whisper"}),
+                ),
+            )
+            page2.add_init_script(
+                """
+                class NetworkFailSR {
+                  start() {
+                    setTimeout(() => {
+                      if (this.onerror) this.onerror({ error: 'network' });
+                      if (this.onend) this.onend();
+                    }, 20);
+                  }
+                  stop() {}
+                }
+                window.SpeechRecognition = NetworkFailSR;
+                window.webkitSpeechRecognition = NetworkFailSR;
+                const mockMediaDevices = {
+                  getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] })
+                };
+                Object.defineProperty(navigator, 'mediaDevices', { configurable: true, get: () => mockMediaDevices });
+                window.MediaRecorder = class MockMR {
+                  static isTypeSupported() { return true; }
+                  constructor() { this.state = 'inactive'; this.mimeType = 'audio/webm'; }
+                  start() {
+                    this.state = 'recording';
+                    setTimeout(() => {
+                      if (this.ondataavailable) this.ondataavailable({ data: new Blob([new Uint8Array(2048)], { type: 'audio/webm' }) });
+                    }, 30);
+                  }
+                  stop() {
+                    this.state = 'inactive';
+                    setTimeout(() => { if (this.onstop) this.onstop(); }, 20);
+                  }
+                };
+                // Simulate deterministic 350ms speech burst followed by silence via AudioContext AnalyserNode
+                window.AudioContext = class MockAC {
+                  constructor() { this.state = 'running'; this.currentTime = 0; this.destination = {}; }
+                  createOscillator() { return { frequency: { value: 0 }, connect() {}, start() {}, stop() {} }; }
+                  createGain() { return { gain: { setValueAtTime() {}, exponentialRampToValueAtTime() {} }, connect() {} }; }
+                  createAnalyser() {
+                    const t0 = performance.now();
+                    return {
+                      fftSize: 1024,
+                      smoothingTimeConstant: 0.7,
+                      connect() {},
+                      getByteTimeDomainData(buf) {
+                        const dt = performance.now() - t0;
+                        buf.fill(dt < 350 ? 180 : 128);
+                      }
+                    };
+                  }
+                  createMediaStreamSource() { return { connect() {} }; }
+                  resume() { return Promise.resolve(); }
+                  close() { return Promise.resolve(); }
+                };
+                window.webkitAudioContext = window.AudioContext;
+                class MockUtterance { constructor(t) { this.text = t; this.lang = 'en-IN'; this.rate = 1; } }
+                Object.defineProperty(window, 'SpeechSynthesisUtterance', { configurable: true, writable: true, value: MockUtterance });
+                const mockSynth = {
+                  getVoices() { return [{ lang: 'en-IN', name: 'MockVoice' }]; },
+                  cancel() {},
+                  speak(u) { setTimeout(() => { if (u && typeof u.onend === 'function') u.onend(); }, 20); }
+                };
+                Object.defineProperty(window, 'speechSynthesis', { configurable: true, get: () => mockSynth });
+                HTMLMediaElement.prototype.play = function() {
+                  setTimeout(() => { if (this.onended) this.onended(); }, 40);
+                  return Promise.resolve();
+                };
+                """
+            )
+            page2.goto(base_url, wait_until="networkidle")
+            page2_errs: list[str] = []
+            page2.on("pageerror", lambda e: page2_errs.append(str(e)))
+            page2.on("console", lambda m: page2_errs.append(m.text) if m.type == "error" else None)
+            page2.click("#btnStartCall")
+            try:
+                page2.wait_for_function(
+                    "() => Number(document.body.dataset.completedStreams || '0') >= 2",
+                    timeout=12000,
+                )
+            except Exception as exc:
+                diag2 = page2.evaluate(
+                    "() => ({orb: document.getElementById('micOrb')?.dataset.state, orbTxt: document.getElementById('micOrb')?.innerText, orbLbl: document.getElementById('orbLabel')?.innerText, streams: document.body.dataset.completedStreams, errCls: document.getElementById('errorBanner')?.className, errTxt: document.getElementById('errorBannerText')?.innerText})"
+                )
+                raise AssertionError(f"Case 2 timeout: diag={diag2}, errs={page2_errs}") from exc
+            caps2 = page2.inner_text("#captionsBox")
+            assert "Why did my orders drop?" in caps2, f"Expected Whisper STT transcript in captions, got:\n{caps2}"
+            ctx2.close()
+            browser.close()
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except Exception:
+            proc.kill()
+        log_file.close()

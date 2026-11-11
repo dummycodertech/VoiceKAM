@@ -60,13 +60,16 @@ export class AudioPlaybackQueue{
   }
   play(blob){return new Promise(res=>{
     if(this.aborted)return res();
-    const u=URL.createObjectURL(blob),a=new Audio(u);this.audio=a;let d=false;this.tap(a);
-    const done=()=>{if(d)return;d=true;if(this.resolveCur===done)this.resolveCur=null;if(this.audio===a)this.audio=null;URL.revokeObjectURL(u);if(this.src){try{this.src.disconnect()}catch{}this.src=null}res()};
+    const u=URL.createObjectURL(blob),a=new Audio(u);this.audio=a;let d=false,guard=null;this.tap(a);
+    const done=()=>{if(d)return;d=true;clearTimeout(guard);if(this.resolveCur===done)this.resolveCur=null;if(this.audio===a)this.audio=null;URL.revokeObjectURL(u);if(this.src){try{this.src.disconnect()}catch{}this.src=null}res()};
+    guard=setTimeout(done,45000);
     this.resolveCur=done;a.onended=done;a.onerror=done;a.play().catch(done);
   })}
   speak(text,filler=false){return new Promise(res=>{
     const s=synth();if(!s||(this.aborted&&!filler))return res();
-    let d=false;const done=()=>{if(d)return;d=true;if(!filler&&this.resolveCur===done)this.resolveCur=null;res()};
+    let d=false,guard=null;const done=()=>{if(d)return;d=true;clearTimeout(guard);if(!filler&&this.resolveCur===done)this.resolveCur=null;res()};
+    const maxMs=filler?6000:Math.max(5000,Math.min(28000,String(text||"").length*95+3000));
+    guard=setTimeout(done,maxMs);
     try{
       s.cancel();const u=new SpeechSynthesisUtterance(text);u.lang=this.language==="hi-IN"?"hi-IN":"en-IN";u.rate=1.03;
       const v=s.getVoices(),m=v.find(x=>x.lang.toLowerCase().includes(u.lang.toLowerCase()))||v.find(x=>x.lang.toLowerCase().startsWith("en-in"));if(m)u.voice=m;
