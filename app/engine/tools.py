@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from app.config import get_settings
 from app.data.context import SellerContext
 from app.data.seed_data import get_scenario_context
 from app.engine import diagnosis
+from app.utils.dates import (
+    anchor_now_ist,
+    compute_followup_date_ist,
+    format_ist_short_date,
+    resolve_due_date_ist,
+)
 from app.utils.formatting import format_inr, normalize_indian_grouping
 
 if TYPE_CHECKING:
@@ -100,8 +105,8 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                     "action_id": {"type": "string", "description": "Action identifier, e.g. ACT-1, ACT-2, ACT-3."},
                     "action_summary": {"type": "string", "description": "Short clear summary of the committed action."},
                     "owner": {"type": "string", "description": "Who owns executing this action (usually the seller or ops lead)."},
-                    "due_date": {"type": "string", "description": "Target completion date or timeframe agreed by the seller."},
-                    "target_metric": {"type": "string", "description": "Optional measurable target, e.g. OOS <= 8 products."},
+                    "due_date": {"type": "string", "description": "Code-computed IST completion date agreed by the seller (e.g. 'Friday 13 Nov')."},
+                    "target_metric": {"type": "string", "description": "Optional measurable target derived from the seller's metrics."},
                 },
                 "required": ["action_id", "action_summary", "owner", "due_date"],
             },
@@ -115,11 +120,11 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "followup_date": {"type": "string", "description": "Agreed date/time for follow-up call, e.g. 'In 3 days at 11 AM'."},
+                    "followup_date": {"type": "string", "description": "Code-computed IST date/time for follow-up call, e.g. 'Saturday 14 Nov at 11:00 AM IST'."},
                     "success_targets": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Measurable metric targets for the next check-in, e.g. ['Out-of-stock products <= 8', 'Cancellation rate <= 10%'].",
+                        "description": "Measurable metric targets derived from the dataset targets.",
                     },
                 },
                 "required": ["followup_date", "success_targets"],
@@ -147,18 +152,9 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
 ]
 
 
-def _default_targets(ctx: SellerContext) -> list[str]:
-    comp = ctx.completeness
-    targets: list[str] = []
-    if comp is None or comp.stock_oos_assessable:
-        oos_max = ctx.followup.oos_target_max if ctx.followup else 8
-        targets.append(f"Out-of-stock products <= {oos_max}")
-    if comp is None or comp.cancellations_assessable:
-        cancel_max = ctx.followup.cancellation_target_pct_max if ctx.followup else 10.0
-        targets.append(f"Cancellation rate <= {cancel_max}%")
-    if not targets:
-        targets.append("Track weekly SKU order recovery on top declining listings")
-    return targets
+def _default_targets(ctx: SellerContext, snapshot: str = "current") -> list[str]:
+    snap = "followup" if snapshot == "followup" else "current"
+    return diagnosis.compute_followup_targets(ctx, snap)["targets_list"]  # type: ignore[arg-type]
 
 
 def _derive_default_issues(ctx: SellerContext, snapshot: str) -> list[str]:
@@ -202,10 +198,12 @@ def _format_whatsapp_summary(session: SessionState, ctx: SellerContext, key_issu
         if session.mode == "followup"
         else f"*{settings.project_name} — Call Summary*"
     )
+    anchor_dt = anchor_now_ist(getattr(session, "anchor_date_ist", None))
+    default_fu_date = compute_followup_date_ist(offset_days=3, anchor=anchor_dt)
     lines = [
         header,
         f"Seller: {seller_name} ({shop_name})",
-        f"Date: {datetime.now(timezone.utc).strftime('%d %b %Y')}",
+        f"Date: {format_ist_short_date(anchor_dt)} (IST)",
         "",
         "*Key Findings:*",
     ]
@@ -218,7 +216,7 @@ def _format_whatsapp_summary(session: SessionState, ctx: SellerContext, key_issu
         for idx, c in enumerate(session.commitments, 1):
             lines.append(f"{idx}. {c['action_summary']} | Owner: {c['owner']} | Due: {c['due_date']}")
     else:
-        plan = diagnosis.build_action_plan(ctx, session.snapshot)
+        plan = diagnosis.build_action_plan(ctx, session.snapshot, anchor_dt=anchor_dt)
         for idx, a in enumerate(plan["actions"], 1):
             lines.append(f"{idx}. {a['title']} | Owner: {a['owner']} | Target: {a['recommended_due']}")
 
@@ -228,8 +226,8 @@ def _format_whatsapp_summary(session: SessionState, ctx: SellerContext, key_issu
         lines.append(f"*Next Follow-up Call:* {fu['followup_date']}")
         lines.append("*Success Targets:* " + "; ".join(fu["success_targets"]))
     else:
-        lines.append("*Next Follow-up Call:* In 3 days")
-        lines.append("*Success Targets:* " + "; ".join(_default_targets(ctx)))
+        lines.append(f"*Next Follow-up Call:* {default_fu_date}")
+        lines.append("*Success Targets:* " + "; ".join(_default_targets(ctx, session.snapshot)))
 
     lines.append("")
     lines.append(f"_Generated by {settings.agent_name}, {settings.project_name} Virtual KAM_")
@@ -246,6 +244,8 @@ def execute_tool(
     args = arguments or {}
     snapshot = session.snapshot if session else "current"
     ctx = session.seller_context if session is not None else (context or get_scenario_context())
+
+    anchor_dt = anchor_now_ist(getattr(session, "anchor_date_ist", None) if session else None)
 
     if name == "get_seller_overview":
         return diagnosis.get_seller_overview(ctx, snapshot=snapshot)
@@ -270,14 +270,17 @@ def execute_tool(
         return diagnosis.get_visibility_funnel(ctx, snapshot=snapshot)
 
     if name == "build_action_plan":
-        return diagnosis.build_action_plan(ctx, snapshot=snapshot)
+        return diagnosis.build_action_plan(ctx, snapshot=snapshot, anchor_dt=anchor_dt)
 
     if name == "commit_action":
+        action_id = str(args.get("action_id", f"ACT-{len(session.commitments) + 1 if session else 1}"))
+        raw_due = str(args.get("due_date") or "").strip()
+        due_date_ist = resolve_due_date_ist(raw_due, anchor=anchor_dt, default_days=2)
         commitment = {
-            "action_id": str(args.get("action_id", f"ACT-{len(session.commitments) + 1 if session else 1}")),
+            "action_id": action_id,
             "action_summary": normalize_indian_grouping(str(args.get("action_summary", "")).strip()),
             "owner": str(args.get("owner", ctx.profile.seller_name)).strip(),
-            "due_date": str(args.get("due_date", "Within 48 hours")).strip(),
+            "due_date": due_date_ist,
             "target_metric": normalize_indian_grouping(str(args.get("target_metric", "")).strip()),
             "status": "committed",
         }
@@ -297,10 +300,16 @@ def execute_tool(
         }
 
     if name == "schedule_followup":
-        targets = args.get("success_targets") or _default_targets(ctx)
+        targets = args.get("success_targets") or _default_targets(ctx, snapshot)
+        raw_fu = str(args.get("followup_date") or "").strip()
+        if not raw_fu or "in 3 days" in raw_fu.lower():
+            fu_date = compute_followup_date_ist(offset_days=3, anchor=anchor_dt)
+        else:
+            resolved_d = resolve_due_date_ist(raw_fu, anchor=anchor_dt, default_days=3)
+            fu_date = f"{resolved_d} at 11:00 AM IST"
         schedule = {
-            "followup_date": str(args.get("followup_date", "In 3 days at 11:00 AM")),
-            "success_targets": [str(t) for t in targets],
+            "followup_date": fu_date,
+            "success_targets": [normalize_indian_grouping(str(t)) for t in targets],
             "scheduled": True,
         }
         if session is not None:
@@ -310,6 +319,7 @@ def execute_tool(
     if name == "send_call_summary":
         issues = args.get("key_issues") or _derive_default_issues(ctx, snapshot)
         issues = [normalize_indian_grouping(str(i)) for i in issues]
+        default_fu = compute_followup_date_ist(offset_days=3, anchor=anchor_dt)
         if session is not None:
             whatsapp_text = normalize_indian_grouping(_format_whatsapp_summary(session, ctx, issues))
             norm_commits = [
@@ -327,8 +337,8 @@ def execute_tool(
                 "commitments": norm_commits,
                 "followup": session.followup_schedule
                 or {
-                    "followup_date": "In 3 days",
-                    "success_targets": _default_targets(ctx),
+                    "followup_date": default_fu,
+                    "success_targets": _default_targets(ctx, snapshot),
                 },
                 "whatsapp_text": whatsapp_text,
             }
@@ -342,7 +352,7 @@ def execute_tool(
                 "shop_name": ctx.profile.shop_name,
                 "key_issues": issues,
                 "commitments": [],
-                "followup": {"followup_date": "In 3 days", "success_targets": _default_targets(ctx)},
+                "followup": {"followup_date": default_fu, "success_targets": _default_targets(ctx, snapshot)},
                 "whatsapp_text": "\n".join(issues),
             },
         }

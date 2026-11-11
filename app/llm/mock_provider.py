@@ -55,6 +55,7 @@ class MockLLMProvider(LLMProvider):
             lang = "hinglish"
 
         snap = _extract_json_marker(sys_text, "BASELINE SNAPSHOT:")
+        date_anchors = _extract_json_marker(sys_text, "DATE_ANCHORS:")
         pre_ctx = _extract_json_marker(sys_text, "VERIFIED DATA CONTEXT (cite directly, do not invent figures):")
 
         available_tools = {t["function"]["name"] for t in tools}
@@ -75,6 +76,9 @@ class MockLLMProvider(LLMProvider):
                     recent_tools[m.tool_name] = {}
 
         seller_name = str(snap.get("seller_name") or "Seller Partner")
+        dyn_targets = snap.get("targets") or {}
+        due_2d = str(date_anchors.get("due_2d") or "Friday 13 Nov")
+        followup_3d = str(date_anchors.get("followup_3d") or "Saturday 14 Nov at 11:00 AM IST")
 
         if not recent_tools:
             calls: list[ToolCallRequest] = []
@@ -98,17 +102,28 @@ class MockLLMProvider(LLMProvider):
                 if "commit_action" in available_tools and any(
                     w in last_user for w in ("yes", "ok", "haan", "theek", "agree", "friday", "tomorrow", "kal", "sure", "done", "commit")
                 ):
-                    oos_curr = snap.get("oos_curr")
-                    oos_target = max(1, (int(oos_curr) // 2)) if isinstance(oos_curr, int) else 8
+                    oos_target = dyn_targets.get("out_of_stock_skus_max")
+                    if oos_target is None:
+                        oos_curr = snap.get("oos_curr")
+                        oos_target = max(0, int(oos_curr) - min(5, int(oos_curr))) if isinstance(oos_curr, int) else 0
+                    cancel_target = dyn_targets.get("cancellation_rate_pct_max")
+                    target_list = dyn_targets.get("targets_list") or [
+                        f"Out-of-stock products <= {oos_target}",
+                        *(
+                            [f"Cancellation rate <= {cancel_target}%"]
+                            if cancel_target is not None
+                            else []
+                        ),
+                    ]
                     calls.append(
                         ToolCallRequest(
                             id="m1",
                             name="commit_action",
                             arguments={
                                 "action_id": "ACT-1",
-                                "action_summary": "Execute priority restocking and operational recovery actions",
+                                "action_summary": "Restock priority out-of-stock products",
                                 "owner": seller_name,
-                                "due_date": "Within 48 hours",
+                                "due_date": due_2d,
                                 "target_metric": f"Out-of-stock products <= {oos_target}",
                             },
                         )
@@ -119,11 +134,8 @@ class MockLLMProvider(LLMProvider):
                                 id="m2",
                                 name="schedule_followup",
                                 arguments={
-                                    "followup_date": "In 3 days at 11:00 AM",
-                                    "success_targets": [
-                                        f"Out-of-stock products <= {oos_target}",
-                                        "Cancellation rate <= 10%",
-                                    ],
+                                    "followup_date": followup_3d,
+                                    "success_targets": target_list,
                                 },
                             )
                         )
@@ -142,7 +154,7 @@ class MockLLMProvider(LLMProvider):
                 yield LLMStreamChunk(type="done", provider=self.provider_name, model=self.model_name)
                 return
 
-        reply = self._render_reply(phase, is_followup, lang, last_user, snap, pre_ctx, recent_tools)
+        reply = self._render_reply(phase, is_followup, lang, last_user, snap, pre_ctx, recent_tools, date_anchors)
         for word in reply.split(" "):
             if word:
                 yield LLMStreamChunk(type="token", text=word + " ", provider=self.provider_name, model=self.model_name)
@@ -170,7 +182,11 @@ class MockLLMProvider(LLMProvider):
         snap: dict[str, Any],
         pre_ctx: dict[str, Any],
         recent_tools: dict[str, dict[str, Any]],
+        date_anchors: dict[str, Any] | None = None,
     ) -> str:
+        date_anchors = date_anchors or {}
+        due_2d = str(date_anchors.get("due_2d") or "Friday 13 Nov")
+        followup_3d = str(date_anchors.get("followup_3d") or "Saturday 14 Nov at 11:00 AM IST")
         salutation = str(snap.get("salutation") or "Seller Partner")
         shop_name = str(snap.get("shop_name") or "your store")
         sales_curr = int(snap.get("sales_curr") or 0)
@@ -263,16 +279,17 @@ class MockLLMProvider(LLMProvider):
             if actions:
                 first = actions[0]
                 rec = first.get("estimated_recovery_range_rs", "recovery")
+                due_lbl = first.get("due_date_ist") or due_2d
                 return (
-                    f"Priority 1: {first['title']} ({first['recommended_due']}) for {rec}. "
+                    f"Priority 1: {first['title']} (by {due_lbl}) for {rec}. "
                     "Any promos are subject to eligibility. Shall we lock your timeline?"
                 )
-            return f"I recommend fixing top declining SKUs first, {salutation}. Shall we agree on a 48-hour timeline?"
+            return f"I recommend fixing top declining SKUs first by {due_2d}, {salutation}. Shall we agree on that date?"
 
         if phase == "COMMIT":
             if "commit_action" in recent_tools:
-                return f"Thank you, {salutation}. I have logged your 48-hour commitment and scheduled a follow-up check-in. Shall I send the summary?"
-            return f"Perfect, {salutation}. Can you confirm starting the top action within 48 hours so I can schedule follow-up?"
+                return f"Thank you, {salutation}. I logged your commitment for {due_2d} and scheduled follow-up on {followup_3d}. Shall I send the summary?"
+            return f"Perfect, {salutation}. Will you complete the priority restock by {due_2d}?"
 
         if phase == "SUMMARY":
             share_bit = (
@@ -282,7 +299,7 @@ class MockLLMProvider(LLMProvider):
             )
             return (
                 f"Recap for {salutation}: {share_bit} in the {sales_pct}% drop. "
-                "You committed to next steps and I sent your summary with a 3-day follow-up. Anything else?"
+                f"You agreed to restock by {due_2d}, and follow-up is scheduled for {followup_3d}. Anything else?"
             )
 
         return f"Thank you for your time, {salutation}. Wishing {shop_name} strong sales this week!"

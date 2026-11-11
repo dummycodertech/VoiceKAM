@@ -10,6 +10,12 @@ from app.agent.session import Phase, SessionState
 from app.config import Settings, get_settings
 from app.engine import diagnosis
 from app.engine.tools import TOOL_SCHEMAS
+from app.utils.dates import (
+    anchor_now_ist,
+    compute_due_date_ist,
+    compute_followup_date_ist,
+    format_ist_date,
+)
 from app.utils.formatting import format_inr
 
 # Precompiled word-boundary regexes (avoid substring bugs like "look"/"broken" triggering "ok")
@@ -281,6 +287,32 @@ def build_system_prompt(
     headline = diagnosis.compute_headline_metrics(ctx, session.snapshot)
     diag = diagnosis.run_diagnosis(ctx, session.snapshot)
 
+    diag_ran = (
+        session.diagnose_preloaded
+        or any(t.get("name") == "run_diagnosis" for t in session.tool_history)
+        or session.phase
+        in (
+            Phase.DIAGNOSE,
+            Phase.REVIEW_COMMITMENTS,
+            Phase.RECOMMEND,
+            Phase.COMMIT,
+            Phase.SUMMARY,
+            Phase.CLOSE,
+        )
+    )
+
+    anchor_dt = anchor_now_ist(getattr(session, "anchor_date_ist", None))
+    date_anchors = {
+        "today_ist": format_ist_date(anchor_dt),
+        "due_today": compute_due_date_ist(0, anchor_dt)["due_date_ist"],
+        "due_1d": compute_due_date_ist(1, anchor_dt)["due_date_ist"],
+        "due_2d": compute_due_date_ist(2, anchor_dt)["due_date_ist"],
+        "due_3d": compute_due_date_ist(3, anchor_dt)["due_date_ist"],
+        "due_5d": compute_due_date_ist(5, anchor_dt)["due_date_ist"],
+        "followup_3d": compute_followup_date_ist(3, anchor_dt),
+    }
+
+    dyn_targets = diagnosis.compute_followup_targets(ctx, session.snapshot)
     agent_name = settings.agent_name_devanagari if session.language == "hi-IN" else settings.agent_name
     seller_name = profile.seller_name
     salutation = profile.salutation
@@ -303,35 +335,53 @@ def build_system_prompt(
         "oos_curr": headline["metrics"]["out_of_stock_skus"]["current"],
         "cancel_prev_pct": headline["metrics"]["cancellation_rate_pct"]["baseline"],
         "cancel_curr_pct": headline["metrics"]["cancellation_rate_pct"]["current"],
-        "missing_signals": diag.get("missing_signals") or [],
-        "drivers_summary": [
-            {
-                "driver": d["driver"],
-                "title": d["title"],
-                "assessable": d["assessable"],
-                "share_pct": d["share_pct"],
-                "lost_orders": d["lost_orders"],
-            }
-            for d in diag.get("drivers", [])
-        ],
+        "targets": dyn_targets,
+        "missing_signals": (diag.get("missing_signals") or []) if diag_ran else [],
+        "drivers_summary": (
+            [
+                {
+                    "driver": d["driver"],
+                    "title": d["title"],
+                    "assessable": d["assessable"],
+                    "share_pct": d["share_pct"],
+                    "lost_orders": d["lost_orders"],
+                }
+                for d in diag.get("drivers", [])
+            ]
+            if diag_ran
+            else []
+        ),
     }
 
     lines = [
         f"You are {agent_name}, a warm, proactive Virtual Key Account Manager for an online marketplace speaking with {seller_name} ({salutation}) of {shop_name}{city_part}.",
         _language_rule(session.language, salutation),
         f"CURRENT PHASE: {session.phase.value} | SNAPSHOT: {session.snapshot} | SCENARIO: {profile.scenario_id}",
+        f"CURRENT_DATE_IST: {date_anchors['today_ist']} (Asia/Kolkata)",
         "STRICT VOICE RULES:",
-        "- Keep replies to 1-2 short sentences (under 35 words; max 45 words; SUMMARY up to 65 words).",
+        "- Keep replies to 1-2 short sentences (under 35 words; max 45 words; SUMMARY up to 75 words).",
         "- Ask at most ONE question per turn. Use natural acknowledgments ('Got it', 'I understand').",
         "- NO markdown, NO bullet lists, NO emojis, NO headings, NO internal reasoning.",
         "- NEVER invent or calculate numbers; speak ONLY numbers present in BASELINE SNAPSHOT or VERIFIED DATA CONTEXT.",
+        "- Quote outcome projections (like projected_oos_after_restock) ONLY from VERIFIED DATA CONTEXT['projections']; never invent post-action counts.",
+        "- NEVER invent dates or weekdays; use ONLY code-computed IST dates from DATE_ANCHORS or VERIFIED DATA CONTEXT.",
         "- Format ALL rupee and large numbers using Indian digit grouping (e.g. Rs 1,35,000 and Rs 2,00,000, never Western 135,000).",
         "- Keep recommendations marketplace-agnostic: never claim guaranteed outcomes or real marketplace program names; qualify promos/ads with 'subject to eligibility'.",
         "- If a driver or metric is missing from the uploaded file, explicitly say it is 'not assessable with the data provided' and never guess.",
         "- If seller is angry or off-topic, empathize briefly and steer back to recovering their sales.",
-        _phase_instruction(session, headline, diag),
-        "BASELINE SNAPSHOT: " + json.dumps(baseline_snapshot, ensure_ascii=False),
     ]
+    if not diag_ran:
+        lines.append(
+            "- CRITICAL PRE-DIAGNOSIS RULE: Diagnosis has NOT run yet. In UNDERSTAND and CLARIFY you may ONLY restate headline numbers "
+            "(sales change, orders). NEVER state or guess root causes (never say 'mainly due to...', 'driven by...', 'caused by...')."
+        )
+    lines.extend(
+        [
+            _phase_instruction(session, headline, diag),
+            "DATE_ANCHORS: " + json.dumps(date_anchors, ensure_ascii=False),
+            "BASELINE SNAPSHOT: " + json.dumps(baseline_snapshot, ensure_ascii=False),
+        ]
+    )
     if session.commitments:
         lines.append("COMMITMENTS LOGGED: " + json.dumps(session.commitments, ensure_ascii=False))
     if session.mode == "followup" and session.prior_commitments:

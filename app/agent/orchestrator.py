@@ -10,9 +10,12 @@ from typing import Any, AsyncIterator
 
 from app.agent.session import Phase, SessionState
 from app.agent.speakable import (
+    audit_projection_claims,
+    detect_premature_causal_claims,
     enforce_voice_length,
     extract_numbers_from_obj,
     find_ungrounded_numbers,
+    sanitize_premature_causal_claims,
     strip_reasoning_and_markdown,
     to_speakable_text,
 )
@@ -23,9 +26,11 @@ from app.agent.state_machine import (
     tools_for_phase,
 )
 from app.config import Settings, get_settings
+from app.engine import diagnosis as diagnosis_engine
 from app.engine.tools import execute_tool
 from app.llm.base import CanonicalMessage, ToolCallRequest
 from app.llm.router import LLMRouter
+from app.utils.dates import audit_dates
 from app.utils.formatting import normalize_indian_grouping
 
 MAX_TOOL_ROUNDS = 2
@@ -189,6 +194,14 @@ class AgentOrchestrator:
         results = await asyncio.gather(*[_exec_one(n, a) for n, a in tool_specs])
         for tname, targs, res, ms in results:
             session.grounded_numbers.update(extract_numbers_from_obj(res))
+            if tname == "build_action_plan" and isinstance(res.get("projections"), dict):
+                session.latest_projections.update(res["projections"])
+            elif tname == "get_out_of_stock_skus" and "projected_oos_after_restock" in res:
+                session.latest_projections.setdefault(
+                    "projected_oos_after_restock", res.get("projected_oos_after_restock")
+                )
+                session.latest_projections.setdefault("current_oos_count", res.get("total_oos_count"))
+                session.latest_projections.setdefault("planned_restock_count", res.get("planned_restock_count"))
             record = {
                 "name": tname,
                 "arguments": targs,
@@ -437,6 +450,14 @@ class AgentOrchestrator:
                 tc_results = await asyncio.gather(*[_exec_tc(tc) for tc in pending_tool_calls])
                 for tc, res, ms in tc_results:
                     session.grounded_numbers.update(extract_numbers_from_obj(res))
+                    if tc.name == "build_action_plan" and isinstance(res.get("projections"), dict):
+                        session.latest_projections.update(res["projections"])
+                    elif tc.name == "get_out_of_stock_skus" and "projected_oos_after_restock" in res:
+                        session.latest_projections.setdefault(
+                            "projected_oos_after_restock", res.get("projected_oos_after_restock")
+                        )
+                        session.latest_projections.setdefault("current_oos_count", res.get("total_oos_count"))
+                        session.latest_projections.setdefault("planned_restock_count", res.get("planned_restock_count"))
                     session.tool_history.append(
                         {
                             "name": tc.name,
@@ -489,10 +510,44 @@ class AgentOrchestrator:
             if "summary_card" in res:
                 yield _sse("summary_card", res["summary_card"])
 
-        # Enforce voice word-count cap & clean text with Indian digit grouping
+        # Guard Item 8 + enforce voice word-count cap & clean text with Indian digit grouping
+        diag_has_run = (
+            session.diagnose_preloaded
+            or any(t.get("name") == "run_diagnosis" for t in session.tool_history)
+            or session.phase
+            in (
+                Phase.DIAGNOSE,
+                Phase.REVIEW_COMMITMENTS,
+                Phase.RECOMMEND,
+                Phase.COMMIT,
+                Phase.SUMMARY,
+                Phase.CLOSE,
+            )
+        )
         cleaned_reply = normalize_indian_grouping(
             enforce_voice_length(final_text, session.phase.value, max_words=45)
         )
+        causal_hits: list[str] = []
+        if not diag_has_run and cleaned_reply:
+            causal_hits = detect_premature_causal_claims(cleaned_reply)
+            if causal_hits:
+                session.causal_warnings.append(
+                    {
+                        "phase": session.phase.value,
+                        "claims": causal_hits,
+                        "reply": cleaned_reply,
+                    }
+                )
+                hm = diagnosis_engine.compute_headline_metrics(session.seller_context, session.snapshot)
+                cleaned_reply = normalize_indian_grouping(
+                    sanitize_premature_causal_claims(
+                        cleaned_reply,
+                        sales_delta_pct=hm["metrics"]["sales_gmv"]["delta_pct"],
+                        sales_curr=hm["metrics"]["sales_gmv"]["current"],
+                        salutation=session.seller_context.profile.salutation,
+                        language=session.language,
+                    )
+                )
         if not cleaned_reply:
             cleaned_reply = normalize_indian_grouping(_localized_empty_fallback(session))
             yield _sse("token", {"text": cleaned_reply})
@@ -522,6 +577,22 @@ class AgentOrchestrator:
                 }
             )
 
+        proj_warns = audit_projection_claims(cleaned_reply, session.latest_projections)
+        if proj_warns:
+            for pw in proj_warns:
+                entry = {"phase": session.phase.value, **pw}
+                session.projection_warnings.append(entry)
+                session.ungrounded_warnings.append(entry)
+
+        date_warns = audit_dates(
+            cleaned_reply,
+            anchor=session.anchor_date_ist,
+            summary_card=session.summary_card if session.phase in (Phase.SUMMARY, Phase.CLOSE) else None,
+        )
+        if date_warns:
+            for dw in date_warns:
+                session.date_warnings.append({"phase": session.phase.value, **dw})
+
         session.messages.append(CanonicalMessage(role="assistant", content=cleaned_reply))
         prev_after = session.phase
         advance_phase_after_turn(session)
@@ -542,6 +613,9 @@ class AgentOrchestrator:
             "llm_requests": llm_requests,
             "provider": provider_used,
             "ungrounded_numbers": ungrounded,
+            "date_warnings": date_warns,
+            "projection_warnings": proj_warns,
+            "causal_warnings": causal_hits,
         }
         session.latency_history.append(latency_info)
         yield _sse("latency", latency_info)

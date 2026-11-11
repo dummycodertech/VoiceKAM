@@ -17,6 +17,7 @@ from app.data.context import (
     SnapshotType,
     compute_data_completeness,
 )
+from app.utils.dates import compute_due_date_ist, offset_days_for_timeframe
 from app.utils.formatting import format_indian_number, format_inr
 
 UNAVAILABLE_MSG = "not assessable with the data provided"
@@ -527,14 +528,19 @@ def get_out_of_stock_skus(
 
     oos = core["oos"]
     ranked = oos["items"]
+    planned_restock = min(5, sum(1 for item in ranked if item.get("newly_oos")) or len(ranked))
+    total_oos = int(oos["total_oos_count"] or 0)
+    projected_oos = max(0, total_oos - planned_restock)
     payload: dict[str, Any] = {
         "snapshot": snapshot,
         "assessable": True,
         "status": "assessed",
         "confidence": oos["confidence"],
-        "total_oos_count": oos["total_oos_count"],
+        "total_oos_count": total_oos,
         "newly_oos_count": oos["newly_oos_count"],
         "chronic_oos_count": oos["chronic_oos_count"],
+        "planned_restock_count": planned_restock,
+        "projected_oos_after_restock": projected_oos,
         "total_oos_lost_orders": oos["orders"],
         "total_oos_lost_revenue": oos["revenue"],
         "top_oos_skus": ranked[:limit],
@@ -948,21 +954,81 @@ def run_diagnosis(context: SellerContext, snapshot: SnapshotType = "current") ->
     }
 
     if snapshot == "followup" and context.followup is not None:
+        dyn_targets = compute_followup_targets(context, snapshot)
+        oos_tgt = (
+            context.followup.oos_target_max
+            if context.followup.oos_target_max is not None
+            else dyn_targets["out_of_stock_skus_max"]
+        )
+        cancel_tgt = (
+            context.followup.cancellation_target_pct_max
+            if context.followup.cancellation_target_pct_max is not None
+            else dyn_targets["cancellation_rate_pct_max"]
+        )
         result["followup_comparison"] = {
             "days_elapsed": context.followup.days_elapsed,
             "prior_commitments": list(context.followup.default_prior_commitments),
             "metrics": headline.get("followup"),
             "targets": {
-                "out_of_stock_skus_max": context.followup.oos_target_max,
-                "cancellation_rate_pct_max": context.followup.cancellation_target_pct_max,
+                "out_of_stock_skus_max": oos_tgt,
+                "cancellation_rate_pct_max": cancel_tgt,
                 "monthly_sales_pace_target": context.followup.monthly_sales_pace_target,
             },
         }
     return result
 
 
-def build_action_plan(context: SellerContext, snapshot: SnapshotType = "current") -> dict[str, Any]:
-    """Generate prioritized recovery plan ranked dynamically by diagnosed impact."""
+def compute_followup_targets(context: SellerContext, snapshot: SnapshotType = "current") -> dict[str, Any]:
+    """Derive dataset-specific OOS and cancellation targets dynamically (no magic numbers)."""
+    comp = _completeness(context)
+    skus = context.resolve_skus(snapshot)
+    cancels = context.resolve_cancellations(snapshot)
+
+    curr_oos = sum(1 for s in skus if s.is_oos_curr)
+    chronic_oos = sum(1 for s in skus if s.is_oos_prev)
+    newly_oos = max(0, curr_oos - chronic_oos)
+    planned_restock = min(5, newly_oos) if newly_oos > 0 else min(5, curr_oos)
+    oos_target = (
+        context.followup.oos_target_max
+        if snapshot == "followup" and context.followup is not None and context.followup.oos_target_max is not None
+        else max(chronic_oos, curr_oos - planned_restock)
+    )
+
+    orders_prev = sum(s.orders_prev for s in skus)
+    orders_curr = sum(s.orders_curr for s in skus)
+    cancels_prev = sum(c.count_prev for c in cancels)
+    cancels_curr = sum(c.count_curr for c in cancels)
+    base_pct = cancels_prev / max(1, orders_prev + cancels_prev) * 100.0
+    curr_pct = cancels_curr / max(1, orders_curr + cancels_curr) * 100.0
+    if snapshot == "followup" and context.followup is not None and context.followup.cancellation_target_pct_max is not None:
+        cancel_target = float(context.followup.cancellation_target_pct_max)
+    elif curr_pct > base_pct:
+        cancel_target = round(base_pct + 0.30 * (curr_pct - base_pct), 1)
+    else:
+        cancel_target = round(max(1.0, curr_pct), 1)
+
+    targets_list: list[str] = []
+    if comp.stock_oos_assessable:
+        targets_list.append(f"Out-of-stock products <= {oos_target}")
+    if comp.cancellations_assessable:
+        targets_list.append(f"Cancellation rate <= {cancel_target}%")
+    if not targets_list:
+        targets_list.append("Track weekly SKU order recovery on top declining listings")
+
+    return {
+        "out_of_stock_skus_max": oos_target,
+        "planned_restock_count": planned_restock,
+        "cancellation_rate_pct_max": cancel_target,
+        "targets_list": targets_list,
+    }
+
+
+def build_action_plan(
+    context: SellerContext,
+    snapshot: SnapshotType = "current",
+    anchor_dt: Any = None,
+) -> dict[str, Any]:
+    """Generate prioritized recovery plan ranked dynamically by diagnosed impact with IST dates & projections."""
     owner_name = context.profile.seller_name
     diag = run_diagnosis(context, snapshot)
     oos = get_out_of_stock_skus(context, limit=5, snapshot=snapshot)
@@ -970,54 +1036,69 @@ def build_action_plan(context: SellerContext, snapshot: SnapshotType = "current"
     cancels = get_cancellation_breakdown(context, snapshot=snapshot)
     funnel = get_visibility_funnel(context, snapshot=snapshot)
     comp = _completeness(context)
+    dyn_targets = compute_followup_targets(context, snapshot)
 
     candidates: list[tuple[int, dict[str, Any]]] = []
+    planned_restock_count = 0
 
     if comp.stock_oos_assessable and (oos.get("top_oos_skus") or []):
         top_skus = [s for s in oos["top_oos_skus"] if s.get("newly_oos")] or oos["top_oos_skus"]
         top_skus = top_skus[:5]
+        planned_restock_count = len(top_skus)
         sku_ids = [s["sku_id"] for s in top_skus]
         sku_names = ", ".join(f"{s['name']} ({s['sku_id']})" for s in top_skus[:3])
         impact_rev = max(1000, int(oos.get("total_oos_lost_revenue") or 0))
         low_est = round(impact_rev * 0.70, -2)
         high_est = round(impact_rev * 0.90, -2)
+        due_info = compute_due_date_ist(2, anchor=anchor_dt)
         candidates.append(
             (
                 impact_rev,
                 {
                     "action_id": "ACT-FU-1" if snapshot == "followup" else "ACT-1",
+                    "action_type": "restock",
                     "title": f"Restock priority OOS products ({', '.join(sku_ids[:3])}) and enable low-stock alerts",
                     "owner": owner_name,
                     "effort": "Medium",
                     "impact": "High",
                     "target_skus": sku_ids,
+                    "target_sku_names": [s["name"] for s in top_skus],
                     "estimated_recovery_range_rs": f"{format_inr(int(low_est))} - {format_inr(int(high_est))}/month",
-                    "recommended_due": "Within 48 hours",
+                    "offset_days": 2,
+                    "due_date_ist": due_info["due_date_ist"],
+                    "recommended_due": f"By {due_info['due_date_ist']}",
                     "details": f"Top impacted OOS items: {sku_names}. Restocking restores baseline daily order pace.",
                 },
             )
         )
 
+    planned_reprice_count = 0
     if comp.pricing_assessable and (pricing.get("pricing_gaps") or []):
         gaps = pricing["pricing_gaps"][:3]
+        planned_reprice_count = len(gaps)
         gap_ids = [g["sku_id"] for g in gaps]
         gap_desc = ", ".join(
             f"{g['name']} ({format_inr(int(g['seller_price']))} -> ~{format_inr(int(g['suggested_price']))})"
             for g in gaps
         )
         impact_rev = max(1000, int(pricing.get("total_pricing_lost_revenue") or 0))
+        due_info = compute_due_date_ist(3, anchor=anchor_dt)
         candidates.append(
             (
                 impact_rev,
                 {
                     "action_id": "ACT-FU-3" if snapshot == "followup" else "ACT-2",
+                    "action_type": "pricing",
                     "title": f"Align prices within ~2% of lowest competitor offer on {len(gaps)} active SKU(s)",
                     "owner": owner_name,
                     "effort": "Low",
                     "impact": "Medium-High",
                     "target_skus": gap_ids,
+                    "target_sku_names": [g["name"] for g in gaps],
                     "estimated_recovery_range_rs": f"{format_inr(int(round(impact_rev * 0.60, -2)))} - {format_inr(int(round(impact_rev * 0.90, -2)))}/month",
-                    "recommended_due": "Within 3 days",
+                    "offset_days": 3,
+                    "due_date_ist": due_info["due_date_ist"],
+                    "recommended_due": f"By {due_info['due_date_ist']}",
                     "details": f"Adjust pricing on {gap_desc}, or test a limited promotional offer subject to eligibility.",
                 },
             )
@@ -1025,21 +1106,26 @@ def build_action_plan(context: SellerContext, snapshot: SnapshotType = "current"
 
     if comp.cancellations_assessable:
         curr_pct = cancels.get("current_cancellation_rate_pct") or 0.0
-        target_pct = context.followup.cancellation_target_pct_max if context.followup else 10.0
+        target_pct = dyn_targets["cancellation_rate_pct_max"]
         canc_driver = next((d for d in diag["drivers"] if d["driver"] == "cancellations"), None)
         impact_rev = max(800, int((canc_driver or {}).get("lost_revenue") or 0))
+        due_info = compute_due_date_ist(1, anchor=anchor_dt)
         candidates.append(
             (
                 impact_rev,
                 {
                     "action_id": "ACT-FU-2" if snapshot == "followup" else "ACT-3",
+                    "action_type": "cancellations",
                     "title": f"Sync warehouse inventory twice daily and enforce dispatch cutoff (target <= {target_pct}%)",
                     "owner": owner_name,
                     "effort": "Low",
                     "impact": "High" if impact_rev > 10000 else "Medium",
                     "target_skus": ["Storewide Inventory Sync", "Dispatch Queue"],
+                    "target_sku_names": ["Storewide Inventory Sync"],
                     "estimated_recovery_range_rs": f"{format_inr(int(round(impact_rev * 0.55, -2)))} - {format_inr(int(round(impact_rev * 0.85, -2)))}/month",
-                    "recommended_due": "Starting today",
+                    "offset_days": 1,
+                    "due_date_ist": due_info["due_date_ist"],
+                    "recommended_due": f"By {due_info['due_date_ist']}",
                     "details": f"Current cancellation rate is {curr_pct}%. Reconcile safety stock before pickup cutoff to avoid seller-fault penalties.",
                 },
             )
@@ -1049,18 +1135,23 @@ def build_action_plan(context: SellerContext, snapshot: SnapshotType = "current"
         vis_driver = next((d for d in diag["drivers"] if d["driver"] == "visibility_drop"), None)
         impact_rev = max(500, int((vis_driver or {}).get("lost_revenue") or 0))
         if impact_rev > 1500:
+            due_info = compute_due_date_ist(5, anchor=anchor_dt)
             candidates.append(
                 (
                     impact_rev,
                     {
                         "action_id": "ACT-4",
+                        "action_type": "visibility",
                         "title": "Refresh search keywords, catalog titles, and sponsored visibility on in-stock listings",
                         "owner": owner_name,
                         "effort": "Medium",
                         "impact": "Medium-High",
                         "target_skus": ["Low-Impression Active SKUs"],
+                        "target_sku_names": ["Low-Impression Active Products"],
                         "estimated_recovery_range_rs": f"{format_inr(int(round(impact_rev * 0.45, -2)))} - {format_inr(int(round(impact_rev * 0.80, -2)))}/month",
-                        "recommended_due": "Within 5 days",
+                        "offset_days": 5,
+                        "due_date_ist": due_info["due_date_ist"],
+                        "recommended_due": f"By {due_info['due_date_ist']}",
                         "details": "Search impressions dropped significantly; optimize product attributes and consider sponsored placement subject to eligibility.",
                     },
                 )
@@ -1070,17 +1161,22 @@ def build_action_plan(context: SellerContext, snapshot: SnapshotType = "current"
     actions = [{**item, "priority": idx + 1} for idx, (_, item) in enumerate(candidates[:3])]
 
     if not actions:
+        due_info = compute_due_date_ist(2, anchor=anchor_dt)
         actions.append(
             {
                 "action_id": "ACT-1",
+                "action_type": "audit",
                 "priority": 1,
                 "title": "Audit top declining SKUs and supply missing operational columns",
                 "owner": owner_name,
                 "effort": "Low",
                 "impact": "Medium",
                 "target_skus": [s.sku_id for s in sorted(context.skus, key=lambda x: x.orders_curr - x.orders_prev)[:3]],
+                "target_sku_names": [s.name for s in sorted(context.skus, key=lambda x: x.orders_curr - x.orders_prev)[:3]],
                 "estimated_recovery_range_rs": "Estimate unavailable until operational columns are provided",
-                "recommended_due": "Within 48 hours",
+                "offset_days": 2,
+                "due_date_ist": due_info["due_date_ist"],
+                "recommended_due": f"By {due_info['due_date_ist']}",
                 "details": (
                     "Optional stock, competitor price, visibility, and cancellation columns were not provided; "
                     "audit availability and pricing directly on your highest-volume declining listings."
@@ -1088,10 +1184,31 @@ def build_action_plan(context: SellerContext, snapshot: SnapshotType = "current"
             }
         )
 
+    curr_oos_count = oos.get("total_oos_count")
+    projected_oos_after_restock = (
+        max(0, int(curr_oos_count) - planned_restock_count)
+        if curr_oos_count is not None
+        else None
+    )
+    total_overpriced = int(pricing.get("overpriced_sku_count") or 0)
+    projections = {
+        "current_oos_count": curr_oos_count,
+        "planned_restock_count": planned_restock_count,
+        "projected_oos_after_restock": projected_oos_after_restock,
+        "current_overpriced_sku_count": total_overpriced if comp.pricing_assessable else None,
+        "planned_reprice_count": planned_reprice_count,
+        "projected_overpriced_after_reprice": max(0, total_overpriced - planned_reprice_count) if comp.pricing_assessable else None,
+        "current_cancellation_rate_pct": cancels.get("current_cancellation_rate_pct") if comp.cancellations_assessable else None,
+        "target_cancellation_rate_pct_max": dyn_targets["cancellation_rate_pct_max"] if comp.cancellations_assessable else None,
+        "target_oos_max": dyn_targets["out_of_stock_skus_max"] if comp.stock_oos_assessable else None,
+    }
+
     total_lost_rev = max(0, diag["total_lost_revenue"])
     return {
         "snapshot": snapshot,
         "actions": actions,
+        "projections": projections,
+        "targets": dyn_targets,
         "estimated_combined_recovery_rs": (
             f"{format_inr(int(round(total_lost_rev * 0.55, -2)))} - {format_inr(int(round(total_lost_rev * 0.88, -2)))}/month (indicative range)"
             if total_lost_rev > 0

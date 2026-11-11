@@ -12,6 +12,7 @@ from typing import Any, Literal
 from app.data.context import SellerContext, SnapshotType
 from app.data.seed_data import get_scenario_context
 from app.llm.base import CanonicalMessage
+from app.utils.dates import anchor_now_ist
 
 
 class Phase(str, Enum):
@@ -56,6 +57,11 @@ class SessionState:
     failover_events: list[dict[str, str]] = field(default_factory=list)
     latency_history: list[dict[str, Any]] = field(default_factory=list)
     ungrounded_warnings: list[dict[str, Any]] = field(default_factory=list)
+    anchor_date_ist: str = field(default_factory=lambda: anchor_now_ist().isoformat())
+    latest_projections: dict[str, Any] = field(default_factory=dict)
+    date_warnings: list[dict[str, Any]] = field(default_factory=list)
+    projection_warnings: list[dict[str, Any]] = field(default_factory=list)
+    causal_warnings: list[dict[str, Any]] = field(default_factory=list)
     created_at: float = field(default_factory=time.monotonic)
     last_accessed: float = field(default_factory=time.monotonic)
 
@@ -78,6 +84,10 @@ class SessionState:
             "failover_events": self.failover_events,
             "latency_history": self.latency_history,
             "ungrounded_warnings": self.ungrounded_warnings,
+            "anchor_date_ist": self.anchor_date_ist,
+            "date_warnings": self.date_warnings,
+            "projection_warnings": self.projection_warnings,
+            "causal_warnings": self.causal_warnings,
         }
 
 

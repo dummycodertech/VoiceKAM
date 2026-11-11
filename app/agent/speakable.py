@@ -310,7 +310,16 @@ def extract_numbers_from_obj(obj: Any) -> set[float]:
 
 # Non-metric conversational numbers allowed in natural dialogue (dataset-agnostic)
 _CONVERSATIONAL_ALLOW_PATTERNS = [
-    re.compile(r"\b\d+\s*(?:minutes?|mins?|days?|hours?|hrs?|weeks?|months?|seconds?|pm|am)\b", re.IGNORECASE),
+    re.compile(r"\b\d+\s*(?:minutes?|mins?|days?|hours?|hrs?|weeks?|months?|seconds?|pm|am)(?:\s+ist)?\b", re.IGNORECASE),
+    re.compile(
+        r"(?:\b(?:Mon(?:day)?|Tue(?:sday)?|Wed(?:nesday)?|Thu(?:rsday)?|Fri(?:day)?|Sat(?:urday)?|Sun(?:day)?),?\s+)?"
+        r"\b\d{1,2}(?:st|nd|rd|th)?\s+"
+        r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|"
+        r"Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
+        r"(?:,?\s+\d{4})?\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\b\d{1,2}:\d{2}\s*(?:am|pm)?(?:\s+ist)?\b", re.IGNORECASE),
     re.compile(r"\b(?:priority|top|step|action|option|number|scenario)\s*\d+\b", re.IGNORECASE),
     re.compile(r"\bACT-(?:FU-)?\d+\b", re.IGNORECASE),
     re.compile(r"\b[A-Z]{2,8}-\d+\b", re.IGNORECASE),
@@ -362,3 +371,97 @@ def find_ungrounded_numbers(
             continue
         ungrounded.append(token)
     return ungrounded
+
+
+_OOS_OUTCOME_CLAIM_RES = [
+    re.compile(
+        r"(?:bring|reduce|cut|drop|lower|get)\s+(?:out[- ]of[- ]stock|oos|out of stock products?)\s*(?:count|products?|items?)?\s*"
+        r"(?:down\s+)?to\s+(\d+)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:out[- ]of[- ]stock|oos)\s*(?:count|products?|items?)?\s*(?:down\s+to|will\s+(?:be|drop\s+to|fall\s+to))\s+(\d+)\b",
+        re.IGNORECASE,
+    ),
+]
+
+
+def audit_projection_claims(reply: str, projections: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Flag numeric post-action outcome claims that contradict tool-computed projections."""
+    if not reply or not projections:
+        return []
+    warnings: list[dict[str, Any]] = []
+    seen: set[tuple[str, int, int]] = set()
+    proj_oos = projections.get("projected_oos_after_restock")
+    if proj_oos is not None:
+        for pat in _OOS_OUTCOME_CLAIM_RES:
+            for m in pat.finditer(reply):
+                claimed = int(m.group(1))
+                key = ("projected_oos_after_restock", claimed, m.end(1))
+                if claimed != int(proj_oos) and key not in seen:
+                    seen.add(key)
+                    warnings.append(
+                        {
+                            "type": "projection_mismatch",
+                            "metric": "projected_oos_after_restock",
+                            "claimed": claimed,
+                            "projected": int(proj_oos),
+                            "phrase": m.group(0),
+                            "message": (
+                                f"Reply claimed OOS outcome {claimed}, but tool projection is {proj_oos}."
+                            ),
+                        }
+                    )
+    return warnings
+
+
+_CAUSAL_CLAIM_RES = [
+    re.compile(
+        r"\b(?:mainly|primarily|mostly|largely)\s+(?:due to|because of|from|driven by|caused by)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:is|was|are|were)\s+(?:driven by|caused by)\s+(?:stock|out[- ]?of[- ]?stock|pricing|price|visibility|cancel)",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\baccounted for\s+\d+(?:\.\d+)?%", re.IGNORECASE),
+    re.compile(
+        r"\b(?:biggest|main|top|primary)\s+(?:reason|driver|cause|factor)\s+(?:is|was)\s+(?:stock|out[- ]?of[- ]?stock|pricing|visibility|cancel)",
+        re.IGNORECASE,
+    ),
+]
+
+
+def detect_premature_causal_claims(text: str) -> list[str]:
+    """Detect causal attribution phrases in text (disallowed before DIAGNOSE runs)."""
+    if not text:
+        return []
+    hits: list[str] = []
+    for pat in _CAUSAL_CLAIM_RES:
+        m = pat.search(text)
+        if m:
+            hits.append(m.group(0))
+    return hits
+
+
+def sanitize_premature_causal_claims(
+    reply: str,
+    *,
+    sales_delta_pct: float | int,
+    sales_curr: int | float,
+    salutation: str,
+    language: str = "en-IN",
+) -> str:
+    """Replace premature causal claims before DIAGNOSE with neutral headline summary + clarifying question."""
+    if not detect_premature_causal_claims(reply):
+        return reply
+    sentences = re.split(r"(?<=[.?!\u0964])\s+", reply.strip())
+    kept = [s for s in sentences if not detect_premature_causal_claims(s)]
+    if kept:
+        return " ".join(kept).strip()
+    pct_str = str(abs(sales_delta_pct)).rstrip("0").rstrip(".") if "." in str(sales_delta_pct) else str(abs(sales_delta_pct))
+    if language == "hi-IN":
+        return f"मैं समझती हूँ {salutation}, आपकी बिक्री {pct_str}% घटकर {format_inr(int(round(sales_curr)))} रह गई है। हाल ही में आपके स्टोर संचालन में क्या बदलाव आया?"
+    if language == "hinglish":
+        return f"Main samajhti hoon {salutation}, sales {pct_str}% ghat kar {format_inr(int(round(sales_curr)))} hui hain. Haal mein store operations mein kya change aaya?"
+    return f"I understand your concern, {salutation} — sales moved {pct_str}% to {format_inr(int(round(sales_curr)))}. What changed in your operations recently?"
