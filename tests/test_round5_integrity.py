@@ -268,10 +268,13 @@ def test_group4_spoken_register_ranges_codes_eligibility_and_cadence():
     ctx = _load_brief_context()
 
     # 1. Ranges use "to" in en-IN, hinglish, and hi-IN; .0% omitted; no ASP/SKU/OOS/funnel/codes
-    rng_text = "Rs 22,200 - Rs 28,500/month recovery, 50.0% drop across HK-008 OOS SKU funnel ASP."
+    rng_text = "Rs 22,200 - Rs 28,500/month recovery, 50.0% drop across HK-008 OOS SKU search funnel ASP."
     out_en = to_speakable_text(rng_text, "en-IN", seller_context=ctx)
     assert "twenty-two thousand two hundred to twenty-eight thousand five hundred rupees a month" in out_en
+    assert "rupeesa" not in to_speakable_text("Rs 22,200 - Rs 28,500 a month recovery.", "en-IN", seller_context=ctx)
+    assert "rupees a month" in to_speakable_text("Rs 22,200 - Rs 28,500 a month recovery.", "en-IN", seller_context=ctx)
     assert "point zero" not in out_en and "fifty percent" in out_en
+    assert "search visibility" in out_en.lower() and "search search" not in out_en.lower()
     for forbidden in ("asp", "sku", "oos", "funnel", "hk-008"):
         assert forbidden not in out_en.lower()
     assert "Insulated Steel Casserole Set" in out_en

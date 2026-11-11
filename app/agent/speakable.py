@@ -13,7 +13,9 @@ if TYPE_CHECKING:
 
 # Common Indian marketplace / voice phrasing expansions (case-insensitive where safe)
 _ABBREV_MAP = [
-    (re.compile(r"\bvisibility\s*(?:&|and)\s*funnel\b", re.IGNORECASE), "search visibility"),
+    (re.compile(r"\bsearch\s+visibility\s*(?:&|and)\s*funnels?\b", re.IGNORECASE), "search visibility"),
+    (re.compile(r"\bvisibility\s*(?:&|and)\s*funnels?\b", re.IGNORECASE), "search visibility"),
+    (re.compile(r"\bsearch\s+funnels?\b", re.IGNORECASE), "search visibility"),
     (re.compile(r"\bfunnels?\b", re.IGNORECASE), "search visibility"),
     (re.compile(r"\bSKUs?\(s\)", re.IGNORECASE), "products"),
     (re.compile(r"\bSKUs\b", re.IGNORECASE), "products"),
@@ -247,7 +249,9 @@ def enforce_spoken_cadence_and_register(
     out = re.sub(r"\b(?!ACT-)[A-Z]{2,8}-\d+\b", "that product", out)
 
     # Replace jargon terms even in displayed spoken turns
-    out = re.sub(r"\bvisibility\s*(?:&|and)\s*funnel\b", "search visibility", out, flags=re.IGNORECASE)
+    out = re.sub(r"\bsearch\s+visibility\s*(?:&|and)\s*funnels?\b", "search visibility", out, flags=re.IGNORECASE)
+    out = re.sub(r"\bvisibility\s*(?:&|and)\s*funnels?\b", "search visibility", out, flags=re.IGNORECASE)
+    out = re.sub(r"\bsearch\s+funnels?\b", "search visibility", out, flags=re.IGNORECASE)
     out = re.sub(r"\bfunnels?\b", "search visibility", out, flags=re.IGNORECASE)
     out = re.sub(r"\bSKUs?\(s\)", "products", out, flags=re.IGNORECASE)
     out = re.sub(r"\bSKUs\b", "products", out, flags=re.IGNORECASE)
@@ -379,7 +383,7 @@ def to_speakable_text(
             return m.group(0)
 
     s = re.sub(
-        r"(?:₹|Rs\.?|INR)\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:-|–)\s*(?:₹|Rs\.?|INR)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(/\s*(?:month|mo)\b|per\s+month\b)?",
+        r"(?:₹|Rs\.?|INR)\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:-|–)\s*(?:₹|Rs\.?|INR)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)(?:\s*(/\s*(?:month|mo)\b|per\s+month\b|a\s+month\b))?",
         _currency_range_repl,
         s,
         flags=re.IGNORECASE,
@@ -444,6 +448,7 @@ def to_speakable_text(
         s,
     )
 
+    s = re.sub(r"\(\s*yes\s*/\s*no\s*\)", "हां या ना" if language == "hi-IN" else "yes or no", s, flags=re.IGNORECASE)
     s = re.sub(r"/\s*(?:month|mo)\b", month_suffix, s, flags=re.IGNORECASE)
     s = re.sub(r"/\s*day\b", day_suffix, s, flags=re.IGNORECASE)
 
