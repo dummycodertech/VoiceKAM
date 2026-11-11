@@ -1,12 +1,12 @@
 # Changelog
 
 All notable changes on the `standalone` branch are logged here by phase.
-The original assessment snapshot remains frozen on `main` at tag `v1.0-assessment`.
+The original v1.0 snapshot remains frozen on `main`.
 
 ---
 
 ## Phase 0 — Freeze and Branch
-- Tagged `main` (`be6b582`) as annotated tag `v1.0-assessment` without modifying `main`.
+- Tagged `main` (`be6b582`) as an annotated release baseline without modifying `main`.
 - Merged verified fix branch `round2-fixes` (`a6f9a1f`: follow-up `repriced_skus` object filter fix in `frontend/kam_brain.js`) into new branch `standalone` (`cbcfb2a`).
 - Established baseline offline test suite (`31/31` passing across unit, reconciliation, failover, TTS/API, and `v1` contract suites).
 - Added `docs/CHANGELOG.md` to track Phase 0 through Phase 9.
@@ -15,7 +15,7 @@ The original assessment snapshot remains frozen on `main` at tag `v1.0-assessmen
 - Centralized project/agent identity and notices in `app/config.py` (`PROJECT_NAME = "VoiceKAM"`, `AGENT_NAME = "metis"`, `AGENT_NAME_DEVANAGARI = "metis"`, `FOOTER_NOTICE`, `PRIVACY_NOTICE`) and exposed `branding` via `GET /api/health`.
 - Replaced legacy marketplace/persona names across backend prompts, greeting templates (`en-IN`, `hinglish`, `hi-IN`), TTS warmups/probes, tools, mock provider, seed fixture (`DEMO-DL-4821` / `Arjun Mehta` / `Metro Home & Kitchen` interim fixture), frontend UI copy/hydration, `pyproject.toml` (`voicekam`), `render.yaml` (`voicekam-virtual-kam`), `.env.example`, `run.ps1`, `run.sh`, `scripts/smoke_test.py`, and docs.
 - Added footer notice (`"Prototype. Uses synthetic data. Not affiliated with any marketplace."`) in `frontend/index.html` and dynamic `/api/health` branding hydration in `frontend/app.js`, `frontend/audio.js`, and `frontend/kam_brain.js`.
-- Removed assessment-specific docs and old captures (`docs/NOTE.md`, `docs/DEMO_SCRIPT.md`, `docs/INTERVIEW_PREP.md`, `docs/FRONTEND_HANDOFF_part1.md`, `docs/FRONTEND_HANDOFF_part2.md`, `docs/captures/*`) from `standalone` (preserved on `main` at `v1.0-assessment`).
+- Removed legacy single-store docs and old captures (`docs/NOTE.md`, `docs/DEMO_SCRIPT.md`, `docs/FRONTEND_HANDOFF_part1.md`, `docs/FRONTEND_HANDOFF_part2.md`, `docs/captures/*`) from `standalone` (preserved on `main`).
 - Added `tests/test_debranding.py` asserting zero legacy brand/persona strings repo-wide and single-source branding config.
 - Added clean historyless export scripts (`scripts/export_clean_repo.sh` and `scripts/export_clean_repo.ps1`).
 
@@ -28,7 +28,7 @@ The original assessment snapshot remains frozen on `main` at tag `v1.0-assessmen
 - Added `tests/test_custom_data.py` and parameterized `tests/test_diagnosis.py` / `tests/test_reconciliation.py` (`42` offline unit/API/contract/debranding tests passing).
 
 ## Phase 3 — Computed Attribution and 4 Seeded Demo Scenarios
-- Implemented `app/data/scenarios.py` with a deterministic scenario generator supporting Scenarios A–D completely distinct from the frozen assessment dataset:
+- Implemented `app/data/scenarios.py` with a deterministic scenario generator supporting Scenarios A–D completely distinct from the frozen baseline dataset:
   - **Scenario A (Default):** *UrbanStride Footwear & Apparel* (Bengaluru, 48 SKUs, Footwear & Activewear — stock-out dominant, ~57%).
   - **Scenario B:** *TechNest Accessories* (Mumbai, 42 SKUs — competitor price gaps & search visibility dominant).
   - **Scenario C:** *FreshBrew Pantry* (Pune, 36 SKUs — seller-caused cancellations & SLA delays dominant).
@@ -60,7 +60,7 @@ The original assessment snapshot remains frozen on `main` at tag `v1.0-assessmen
 
 ## Phase 7 — Security and Repo Hygiene
 - Added configurable per-IP sliding-window rate limiting (`RATE_LIMIT_CHAT_PER_10M`, `RATE_LIMIT_TTS_PER_10M`, `RATE_LIMIT_STT_PER_10M`, `RATE_LIMIT_STARTS_PER_HOUR`, `X-Forwarded-For` first-hop aware -> HTTP `429`), global `DAILY_TURN_CAP` (default `400` -> friendly SSE `error` event), configurable `CORS_ORIGINS`, `MAX_REQUEST_BYTES` HTTP `413` payload guard, security response headers middleware, and `/api/health` secret-pattern redaction in `app/config.py` and `app/main.py`.
-- Added `LICENSE` (MIT with `[Your Name]` placeholder), `CONTRIBUTING.md`, `SECURITY.md`, `docs/PRIVACY.md`, and `.github/workflows/tests.yml` (deterministic, hermetic Playwright UI, and offline eval checks).
+- Added `LICENSE` (MIT), `CONTRIBUTING.md`, `SECURITY.md`, `docs/PRIVACY.md`, and `.github/workflows/tests.yml` (deterministic, hermetic Playwright UI, and offline eval checks).
 - Added `tests/test_security_and_limits.py` covering rate limits, daily cap, CORS, headers, payload cap, TTL/LRU eviction, and `/api/health` scrubbing (`53` offline tests passing).
 - Removed tracked legacy archive `files.zip` and untracked `newfrontend.zip`, ignored `*.zip` in `.gitignore`, and confirmed zero real credentials leaked across both working tree and full `git log -p --all` history (only local untracked `.env` holds runtime keys).
 
@@ -81,3 +81,4 @@ The original assessment snapshot remains frozen on `main` at tag `v1.0-assessmen
 1. **Disable non-functional Gemini TTS tier cleanly:** Verified live Gemini API catalog omits `*-tts` models and rejects `speechConfig` under `generation_config` (`400 INVALID_ARGUMENT` / `404`). Removed Gemini TTS from `app/tts/service.py`, `app/config.py`, `app/main.py` (`/api/health` now reports `"chain": ["edge-tts", "browser"]`), `.env.example`, and all documentation (`2-tier TTS: edge-tts -> browser speechSynthesis`), with tests asserting the 2-tier health schema.
 2. **Line ending normalization (`.gitattributes`):** Added `.gitattributes` enforcing `eol=lf` across source, script, config, and Markdown files (preserving binaries), ran `git add --renormalize .`, refreshed working-copy checkouts to `lf`, and confirmed zero remaining `CRLF` entries in the index and a clean diff.
 3. **Live multi-persona evaluation & strict separation (`make eval-live`):** Upgraded `scripts/run_eval.py` with disk call caching (`.eval_cache/`), exponential backoff retries, real server-side `edge-tts` `first_audio_ms` timing, strict cross-model LLM-as-judge enforcement (never self-judging), and explicit `<!-- BEGIN_LIVE_EVAL -->` / `<!-- BEGIN_OFFLINE_EVAL -->` separation in `docs/EVALUATION.md`. Executed `make eval-live` (`2 runs × 6 personas × 4 scenarios = 48 calls`): `45/48` calls succeeded (`3` failed on Gemini multi-turn tool ordering), `100.0%` (`292/292` turns, `604/604` numeric tokens) grounded, `100.0%` (`360/360`) expected phase tools, `93.8%` completion, `p50/p95` `2004.0 ms / 5840.0 ms` first-token and `3969.0 ms / 7966.0 ms` first-audio (`284` turns), and **`4.6 / 5.0`** cross-model judge score (`n=43/48`), plus an explicit note that synthetic causal-recovery figures are scoped to generated synthetic data only.
+4. **Documentation audit, MIT holder & hygiene cleanup:** Updated the copyright holder in `LICENSE` to `dummycodertech`, updated `README.md` and `docs/PROJECT_SUMMARY.md` with strictly separated Live and Offline Mock evaluation metrics and realistic latency/audit claims, removed stale Gemini TTS references, softened overclaims in `docs/DECISIONS.md` / `docs/ARCHITECTURE.md` / `docs/VOICE_TEST_CHECKLIST.md`, and purged all remaining local paths and legacy context wording across docs and tests.

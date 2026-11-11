@@ -10,7 +10,7 @@
 
 - **Server-Owned Voice State Machine:** Predictable call lifecycle (`GREETING -> UNDERSTAND -> CLARIFY -> DIAGNOSE -> RECOMMEND -> COMMIT -> SUMMARY -> CLOSE`, plus proactive and 3-day `followup` paths) with strict per-phase tool gating (`tools_for_phase`).
 - **Counterfactual Disjoint Attribution Engine:** Computes lost orders and lost GMV directly from SKU, visibility funnel, and cancellation records without double-counting, isolating ambient store-wide trends via an in-stock fairly-priced control cohort (`docs/ATTRIBUTION.md`).
-- **Zero-Hallucination Numeric Audit:** Pre-executes diagnostic tools before diagnosis/recommendation turns, collects all grounded tool numbers per session, and audits every spoken reply (`find_ungrounded_numbers`).
+- **Post-Generation Numeric Grounding Audit:** Pre-executes diagnostic tools before diagnosis/recommendation turns, collects all grounded tool numbers per session, and audits every spoken reply (`find_ungrounded_numbers`), logging any ungrounded digit sequence in `latency` telemetry.
 - **Custom CSV / JSON Upload Validation:** Upload synthetic or anonymized SKU tables (`POST /api/data/validate` & `/api/session/start`) held strictly in RAM with formula-injection blocking, HTML stripping, TTL expiration, and `"not assessable with the data provided"` graceful degradation ([docs/DATA_SCHEMA.md](docs/DATA_SCHEMA.md)).
 - **Multilingual Indian Voice UX:** Seamless `en-IN`, `hinglish`, and `hi-IN` speakable normalization (`int_to_indian_english`, `int_to_indian_hindi`), Chrome Web Speech API + 800 ms end-of-utterance detection, echo guard, barge-in toggle, optional Groq Whisper `/api/stt`, and 2-tier TTS (`edge-tts` -> browser `speechSynthesis`).
 - **Free-Tier Resilience & Quota Protection:** Automatic `LLMRouter` failover across Groq (verified live via `/models`), Google Gemini, and OpenRouter with HTTP `429` cooldowns, HTTP `403` permanent disablement, per-IP sliding-window rate limiting, and `DAILY_TURN_CAP`.
@@ -91,7 +91,7 @@ All settings load via `app/config.py` (`Settings` / `.env`):
 | `GROQ_API_KEY` | `""` | Primary free-tier Groq key (LLM + optional `/api/stt` Whisper) |
 | `GROQ_MODELS` | `openai/gpt-oss-20b,openai/gpt-oss-120b,qwen/qwen3.6-27b,qwen/qwen3.8-27b` | Ordered Groq model chain filtered live via `/models` |
 | `GROQ_REASONING_EFFORT` | `low` | Reasoning effort parameter passed to Groq reasoning models |
-| `GEMINI_API_KEY` | `""` | Fallback Google Gemini key (LLM + optional emergency TTS) |
+| `GEMINI_API_KEY` | `""` | Fallback Google Gemini key (LLM) |
 | `GEMINI_MODELS` | `gemini-3.5-flash-lite,gemini-3.6-flash` | Ordered Gemini fallback chain |
 | `OPENROUTER_API_KEY` | `""` | Optional 3rd-tier OpenRouter API key |
 | `OPENROUTER_MODEL` | `openrouter/free` | OpenRouter fallback model identifier |
@@ -128,23 +128,33 @@ Want to test your own dataset? Download CSV/JSON templates directly from the UI 
 
 ---
 
-## Evaluation Summary (Measured Baseline)
+## Evaluation Summary
 
-Metrics below are copied directly from our offline hermetic evaluation report ([docs/EVALUATION.md](docs/EVALUATION.md)) across **24 multi-turn calls** (`6` seller personas x `4` scenarios x `1` trial, `156` assistant turns, `MockLLMProvider`):
+Metrics below are taken directly from [docs/EVALUATION.md](docs/EVALUATION.md), with **Live** and **Offline Mock** runs kept strictly separate.
 
-| Metric | Measured Value | Detail |
+### Live Evaluation (`Live`: `48` Attempted / `45` Succeeded Calls, `N = 2`)
+
+Measured across `6` scripted seller personas × `4` seeded scenarios × `2` runs using `LLMRouter` failover (`groq:openai/gpt-oss-20b`, `groq:openai/gpt-oss-120b`, `gemini:gemini-3.5-flash-lite`, `gemini:gemini-3.6-flash`), real `edge-tts` MP3 synthesis timing, and cross-model LLM-as-judge (`3` calls failed on a multi-turn Gemini tool-slice edge case):
+
+| Metric (Live) | Measured Value | Detail |
 | :--- | :--- | :--- |
-| Grounding rate (turns) | `100.0%` | `156/156` turns with `0` ungrounded numbers |
-| Grounding rate (number tokens) | `100.0%` | `348/348` spoken numeric tokens traced to tools |
-| Expected tool-call accuracy | `100.0%` | `192/192` expected phase tools executed |
-| Phase completion rate | `100.0%` | `24/24` calls reached `SUMMARY`/`CLOSE` with summary card |
-| Words per turn (avg / max) | `23.5` / `34` | Hard cap `45` words (`60` in `RECOMMEND`) |
-| Commitments captured | `100.0%` (`24` total) | `24/24` calls captured `>=1` commitment |
-| LLM first-token latency (p50 / p95) | `1.0 ms` / `2.0 ms` | Local in-process mock (`MockLLMProvider`) |
-| First-audio latency (p50 / p95) | `not measured / not measured` | Live neural TTS playback latency not captured in offline eval |
-| LLM-as-judge rubric score (1–5) | `not measured` | Live model evaluation via `make eval-live` |
+| Grounding rate (turns) | `100.0%` | `292/292` completed turns with `0` ungrounded numbers |
+| Grounding rate (number tokens) | `100.0%` | `604/604` spoken numeric tokens traced to tools |
+| Expected tool-call accuracy | `100.0%` | `360/360` expected phase tools executed |
+| Phase completion rate | `93.8%` | `45/48` attempted calls reached `SUMMARY`/`CLOSE` with summary card |
+| Words per turn (avg / max) | `32.3` / `56` | Voice budget (`45` default, `55` `DIAGNOSE`/`RECOMMEND`, `82` `SUMMARY`) |
+| Commitments captured | `93.8%` (`45` total) | `45/48` calls captured `>=1` commitment |
+| LLM first-token latency (p50 / p95) | `2004.0 ms` / `5840.0 ms` | End-to-end across `292` live turns (includes rate-limit failover hops) |
+| First-audio latency (p50 / p95) | `3969.0 ms` / `7966.0 ms` | Turn start -> first `sentence` + `edge-tts` MP3 ready (`284` turns measured) |
+| Cross-model LLM-as-judge (1–5) | `4.6 / 5.0` | `n=43/48` (`rel 4.72`, `emp 4.24`, `clr 4.69`, `act 4.74`, `unc 4.6`) |
 
-In addition, `test_200_seeded_trials_ground_truth_recovery` ([tests/test_attribution_properties.py](tests/test_attribution_properties.py)) achieves **`200/200` top-driver recovery** (`0.02 pp` mean absolute error, `8.3 pp` max error) across randomized synthetic stores.
+### Offline Mock Baseline (`Offline Mock`: `24/24` Calls, `N = 1`)
+
+Run hermetically via `MockLLMProvider` (`156` assistant turns): **`100.0%`** turn & token grounding (`348/348`), **`100.0%`** tool accuracy (`192/192`), **`100.0%`** completion (`24/24`), **`23.5` / `34`** avg/max words, and `1.0 ms` / `3.0 ms` in-process first-token timing (`first_audio_ms` and judge score reported as `not measured`).
+
+### Synthetic Causal-Recovery Check
+
+`test_200_seeded_trials_ground_truth_recovery` ([tests/test_attribution_properties.py](tests/test_attribution_properties.py)) achieves **`200/200` top-driver recovery** (`0.02 pp` mean absolute error, `8.3 pp` max error) **strictly on synthetic ground truth generated by the project's own scenario generator (`app/data/scenarios.py`)** — not a claim about real-world marketplace causal accuracy.
 
 ---
 

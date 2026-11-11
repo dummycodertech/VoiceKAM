@@ -1,6 +1,6 @@
 # VoiceKAM Technical Architecture
 
-VoiceKAM separates **analytical truth**, **dialog control**, **language generation**, and **speech synthesis** into cleanly bounded server layers so free-tier language models never invent numbers, lose conversation flow, or block on failing providers.
+VoiceKAM separates **analytical truth**, **dialog control**, **language generation**, and **speech synthesis** into cleanly bounded server layers so free-tier language models never perform arithmetic, drop out of the consultative flow unexpectedly, or stall without fallback on failing providers.
 
 ---
 

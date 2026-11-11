@@ -6,7 +6,7 @@ from app.engine.diagnosis import compute_headline_metrics, get_cancellation_brea
 
 def test_default_scenario_a_is_distinct_and_reconciled():
     ctx = get_scenario_context("A")
-    # Scenario A uses the new standalone store (not old assessment 60-SKU / 400-order / Rs 500 fixture)
+    # Scenario A uses the standalone synthetic store (48 SKUs)
     assert ctx.profile.shop_name == "UrbanStride Footwear & Apparel"
     assert len(ctx.skus) == 48
     assert len({s.sku_id for s in ctx.skus}) == 48

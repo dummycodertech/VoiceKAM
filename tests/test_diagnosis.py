@@ -50,7 +50,7 @@ def test_oos_skus_ranked_by_daily_lost_revenue():
     assert daily_losses == sorted(daily_losses, reverse=True)
 
 
-def test_pricing_gaps_and_control_group_assessment():
+def test_pricing_gaps_and_control_group_eval():
     ctx = get_scenario_context("B")
     pricing = get_pricing_gaps(ctx, "current")
     assert pricing["assessable"] is True

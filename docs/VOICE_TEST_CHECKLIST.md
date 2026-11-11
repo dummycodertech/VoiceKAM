@@ -17,9 +17,9 @@
    - [ ] Click **Start Call** (Inbound mode). Confirm 2-ring tone plays and `metis` speaks greeting aloud.
    - [ ] Notice mic orb pulses (`Listening`) after `metis` finishes.
    - [ ] Speak naturally: *"My sales have dropped significantly this month. Can you help me?"* Wait ~1 second cleanly -> confirm interim text converts to final seller bubble automatically without clicking Send.
-2. **Low-Latency Pipeline (`< 2s` Target)**
+2. **Latency Telemetry & Filler Check**
    - [ ] Verify 600ms filler plays ONLY if LLM/TTS stalls slightly; confirm natural Indian voice plays cleanly (`TTS: edge-tts` on local tunnel; or `TTS: browser` fallback if cloud host throttles Edge).
-   - [ ] Check `First word` and `First sound` timings at bottom of left panel.
+   - [ ] Check `First word` and `First sound` timings at bottom of left panel (note: live free-tier latency increases when rate-limit failovers occur).
 3. **Half-Duplex Echo Guard & Tap-to-Interrupt**
    - [ ] Keep **Headphones** UNCHECKED while using laptop speakers. Verify `metis` does **NOT** transcribe her own speaker voice while speaking.
    - [ ] While `metis` speaks her diagnosis, click **Interrupt (Space)** (or press **Spacebar**). Confirm her audio stops immediately, orb switches back to `Listening`, and your interruption transcribes cleanly.
