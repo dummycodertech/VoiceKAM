@@ -52,3 +52,8 @@ The original assessment snapshot remains frozen on `main` at tag `v1.0-assessmen
 - Fixed WebAudio lifecycle & animation efficiency: `frontend/audio.js` reuses `this.ctx` in `playRingtone()`, and `frontend/viz.js` pauses `requestAnimationFrame` when idle or hidden.
 - Pruned unused CSS selectors, upgraded contrast tokens (`--dim`, `--mute`, `.btn.primary`) for WCAG AA readability, and verified 390px responsive layout with zero horizontal overflow in `frontend/styles.css`.
 - Updated `tests/test_walking_skeleton_ui.py` and `tests/test_full_ui.py` to run hermetically (`ALLOW_MOCK_LLM=true`, `TTS_PROVIDER=browser`) covering Scenario A–D switching, broken/minimal CSV uploads, and 390px layout (`49` passing including UI & debranding suites).
+
+## Phase 6 — Evaluation Harness
+- Added `scripts/run_eval.py` and `Makefile` `eval` / `eval-live` targets evaluating 6 scripted personas (`cooperative`, `vague`, `frustrated`, `off_topic`, `interrupting`, `hinglish`) across Scenarios A–D (`N` configurable, default `1`, with `.eval_cache/` disk caching and exponential backoff for `--live`).
+- Generated `docs/EVALUATION.md` from a real hermetic `--offline --n 1` run (`24` calls, `156` assistant turns: `100.0%` grounding, `100.0%` expected tool accuracy, `100.0%` phase completion, `23.5` avg / `34` max words per turn, `100.0%` commitments captured, `1.0 / 2.0 ms` local mock first-token latency; `first_audio_ms` and `LLM-as-judge` honestly reported as `not measured`).
+- Added `.eval_cache/` to `.gitignore`.

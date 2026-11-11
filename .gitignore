@@ -22,6 +22,7 @@ cloudflared
 logs/
 scratch/
 frontend_old_backup/
+.eval_cache/
 
 # OS / IDE
 .DS_Store
