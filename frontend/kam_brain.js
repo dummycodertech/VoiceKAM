@@ -44,7 +44,7 @@ export function createKamBrainController({rootEl,summaryEl}){
       <div class="big"><div class="neg">-${inr(b.diag.total_lost_revenue)}<small>sales lost a month</small></div><div class="neg">-${b.diag.total_lost_orders}<small>orders lost</small></div></div></section>`;
   }
   function evidence(){
-    const o=(b.oos?.top_oos_skus||[]).slice(0,4),p=(b.price?.pricing_gaps||[]).filter(x=>!(b.price.repriced_skus||[]).includes(x.sku_id));
+    const o=(b.oos?.top_oos_skus||[]).slice(0,4),p=(b.price?.pricing_gaps||[]).filter(x=>!(b.price.repriced_skus||[]).some(s => s.sku_id === x.sku_id));
     if(!o.length&&!p.length)return"";
     return`<section class="card two"><div><h2>Out of stock, biggest losses</h2>${o.map(x=>`<div class="li"><span>${esc(x.sku_id)} ${esc(x.name)}</span><span class="neg">${inr(x.estimated_lost_rev_per_day)}/day</span></div>`).join("")||"<p>None checked yet.</p>"}</div>
       <div><h2>Priced above competitors</h2>${p.map(x=>`<div class="li"><span>${esc(x.sku_id)} ${esc(x.name)}</span><span>${inr(x.seller_price)} vs ${inr(x.competitor_lowest_price)}</span></div>`).join("")||"<p>None checked yet.</p>"}</div></section>`;
