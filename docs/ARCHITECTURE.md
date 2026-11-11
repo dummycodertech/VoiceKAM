@@ -55,14 +55,13 @@ Rather than trusting a lightweight LLM to remember where a call is in a consulta
 
 ---
 
-## 4. Speech Pipeline (STT, Speakable Normalization & 3-Tier TTS)
+## 4. Speech Pipeline (STT, Speakable Normalization & 2-Tier TTS)
 
 - **Speakable Normalization (`app/agent/speakable.py`):** Converts telemetry tokens (`₹1,31,820`, `57.4%`, `US-001`, `GMV`, `SLA`, `->`) into natural `en-IN`, `hinglish`, or Devanagari `hi-IN` phrasing (`एक लाख इकतीस हज़ार आठ सौ बीस रुपये`, `प्रोडक्ट 1`, `प्रतिशत`) per sentence before audio synthesis.
 - **Streaming Sentence Synthesis:** `orchestrator.py` yields SSE `sentence` events as soon as punctuation closes a clause so the frontend pre-fetches audio for sentence `N+1` while playing sentence `N`.
-- **3-Tier TTS (`app/tts/service.py`):**
+- **2-Tier TTS (`app/tts/service.py`):**
   1. **Microsoft Edge Neural TTS (`edge-tts`):** Indian neural voices (`en-IN-NeerjaNeural`, `hi-IN-SwaraNeural`) cached in a 200-entry RAM LRU (`X-TTS-Cached`).
-  2. **Emergency Gemini TTS:** Verified at startup (`gemini-3.8-flash-tts`, fallback `gemini-2.5-flash-preview-tts`), wrapping PCM responses into WAV (`audio/wav`).
-  3. **Browser Fallback:** Returns HTTP `200` `{ "use_browser_tts": true }` on upstream throttling/absence so the browser invokes `window.speechSynthesis` cleanly without red console errors.
+  2. **Browser Fallback:** Returns HTTP `200` `{ "use_browser_tts": true }` on upstream throttling/absence so the browser invokes `window.speechSynthesis` cleanly without red console errors.
 - **Dual STT Input (`frontend/audio.js`):** Primary Chrome `SpeechRecognition` with 800 ms end-of-utterance debouncing, half-duplex speaker echo guard, optional headphone barge-in, 6-second silence check-in, and optional Groq Whisper `/api/stt` fallback for non-Chrome browsers.
 
 ---

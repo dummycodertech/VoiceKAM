@@ -32,9 +32,9 @@
 - **Error (`404`):** `{"detail": "Session not found"}`
 
 ### `POST /api/tts`
-- **Request (`application/json`):** `{"text": string, "language"?: "en-IN"|"hi-IN"|"hinglish" = "en-IN", "provider"?: "auto"|"edge-tts"|"gemini-tts"|"browser"|null}`
+- **Request (`application/json`):** `{"text": string, "language"?: "en-IN"|"hi-IN"|"hinglish" = "en-IN", "provider"?: "auto"|"edge-tts"|"browser"|null}`
 - **Success Audio Response (`200 OK`):**
-  - Body: Binary audio (`audio/mpeg` or `audio/wav`)
+  - Body: Binary audio (`audio/mpeg`)
   - Headers: `X-TTS-Provider`, `X-TTS-Voice`, `X-TTS-Cached` (`"true"|"false"`)
 - **Browser Fallback Response (`200 OK`):**
   - `Content-Type: application/json` (intentionally HTTP `200` so clients switch to Web Speech `speechSynthesis` cleanly without network errors)

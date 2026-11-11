@@ -14,7 +14,7 @@ If you upload your own dataset via **"Use my own data"** (`/api/data/validate` o
 ## 3. Speech & Voice Processing
 - **Web Speech API (Chrome/Edge):** Browser-native speech recognition and browser TTS run according to browser vendor privacy settings.
 - **Optional Groq Whisper fallback (`/api/stt`):** Only invoked when audio is recorded for server transcription; audio bytes are forwarded directly in memory to Groq and never persisted locally.
-- **Neural TTS (`/api/tts`):** Text segments are cached in RAM (`TTS_CACHE_ENABLED=true`, LRU bounded at 200 entries) and synthesized via Microsoft Edge TTS (`edge-tts`) or emergency Gemini TTS when configured.
+- **Neural TTS (`/api/tts`):** Text segments are cached in RAM (`TTS_CACHE_ENABLED=true`, LRU bounded at 200 entries) and synthesized via Microsoft Edge TTS (`edge-tts`) with browser `speechSynthesis` fallback.
 
 ## 4. Telemetry & Cookies
 VoiceKAM does not set analytics tracking cookies, browser fingerprinting scripts, or third-party ad pixels.

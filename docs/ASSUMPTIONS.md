@@ -44,4 +44,4 @@ In `followup` mode, `SellerContext.resolve_skus("followup")`, `resolve_cancellat
 ## 5. Free-Tier Architecture Constraints
 
 - **RAM-only State (`--workers 1`):** `SessionStore` and `UploadedDatasetStore` live strictly in process memory with TTL expiry and LRU eviction; zero uploaded seller records touch disk or logs.
-- **Voice Execution:** Primary live STT uses Chrome's Web Speech API; non-Chrome browsers fall back to Whisper STT (`/api/stt` when Groq key set) or the debug text bar. TTS uses Edge TTS -> Gemini TTS -> browser `speechSynthesis`.
+- **Voice Execution:** Primary live STT uses Chrome's Web Speech API; non-Chrome browsers fall back to Whisper STT (`/api/stt` when Groq key set) or the debug text bar. TTS uses Edge TTS -> browser `speechSynthesis`.

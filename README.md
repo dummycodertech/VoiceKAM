@@ -12,7 +12,7 @@
 - **Counterfactual Disjoint Attribution Engine:** Computes lost orders and lost GMV directly from SKU, visibility funnel, and cancellation records without double-counting, isolating ambient store-wide trends via an in-stock fairly-priced control cohort (`docs/ATTRIBUTION.md`).
 - **Zero-Hallucination Numeric Audit:** Pre-executes diagnostic tools before diagnosis/recommendation turns, collects all grounded tool numbers per session, and audits every spoken reply (`find_ungrounded_numbers`).
 - **Custom CSV / JSON Upload Validation:** Upload synthetic or anonymized SKU tables (`POST /api/data/validate` & `/api/session/start`) held strictly in RAM with formula-injection blocking, HTML stripping, TTL expiration, and `"not assessable with the data provided"` graceful degradation ([docs/DATA_SCHEMA.md](docs/DATA_SCHEMA.md)).
-- **Multilingual Indian Voice UX:** Seamless `en-IN`, `hinglish`, and `hi-IN` speakable normalization (`int_to_indian_english`, `int_to_indian_hindi`), Chrome Web Speech API + 800 ms end-of-utterance detection, echo guard, barge-in toggle, optional Groq Whisper `/api/stt`, and 3-tier TTS (`edge-tts` -> emergency Gemini TTS -> browser `speechSynthesis`).
+- **Multilingual Indian Voice UX:** Seamless `en-IN`, `hinglish`, and `hi-IN` speakable normalization (`int_to_indian_english`, `int_to_indian_hindi`), Chrome Web Speech API + 800 ms end-of-utterance detection, echo guard, barge-in toggle, optional Groq Whisper `/api/stt`, and 2-tier TTS (`edge-tts` -> browser `speechSynthesis`).
 - **Free-Tier Resilience & Quota Protection:** Automatic `LLMRouter` failover across Groq (verified live via `/models`), Google Gemini, and OpenRouter with HTTP `429` cooldowns, HTTP `403` permanent disablement, per-IP sliding-window rate limiting, and `DAILY_TURN_CAP`.
 - **Single-Source Branding Config:** Change `PROJECT_NAME`, `AGENT_NAME`, and `AGENT_NAME_DEVANAGARI` in one place (`app/config.py`) to rebrand backend prompts, greetings, health endpoints, and frontend UI dynamically.
 
@@ -27,7 +27,7 @@ flowchart LR
     SM <--> SC["Session & Dataset Stores (RAM TTL/LRU)<br/>Per-Session SellerContext"]
     SM --> DE["Counterfactual Attribution Engine<br/>OOS | Price DiD | Visibility | Cancellations | Residual"]
     SM --> MR["LLMRouter Failover<br/>Groq -> Gemini -> OpenRouter (-> Mock)"]
-    API --> TTS["3-Tier TTSService<br/>edge-tts -> Gemini TTS -> Browser Fallback"]
+    API --> TTS["2-Tier TTSService<br/>edge-tts -> Browser Fallback"]
     API --> STT["Optional Whisper STT<br/>(/api/stt via Groq)"]
 ```
 
@@ -97,9 +97,8 @@ All settings load via `app/config.py` (`Settings` / `.env`):
 | `OPENROUTER_MODEL` | `openrouter/free` | OpenRouter fallback model identifier |
 | `PROVIDER_COOLDOWN_SECONDS` | `60` | Cooldown window placed on providers returning HTTP `429` |
 | `GROQ_WHISPER_MODEL` | `whisper-large-v3-turbo` | Whisper model used by `/api/stt` when Groq key is present |
-| `TTS_PROVIDER` | `auto` | Voice output chain (`auto`, `edge-tts`, `gemini-tts`, `browser`) |
+| `TTS_PROVIDER` | `auto` | Voice output chain (`auto`, `edge-tts`, `browser`) |
 | `TTS_VOICE_EN` / `TTS_VOICE_HI` | `en-IN-NeerjaNeural` / `hi-IN-SwaraNeural` | Microsoft Edge neural voices for `en-IN`/`hinglish` and `hi-IN` |
-| `GEMINI_TTS_MODELS` / `GEMINI_TTS_VOICE` | `gemini-3.8-flash-tts,gemini-2.5-flash-preview-tts` / `Aoede` | Emergency Gemini TTS fallback chain & voice |
 | `TTS_CACHE_ENABLED` | `true` | Enables RAM LRU audio cache (up to 200 entries) |
 | `PORT` / `LLM_TIMEOUT_SECONDS` | `7860` / `12.0` | HTTP listen port and per-provider streaming timeout |
 | `ALLOW_MOCK_LLM` | `false` | Enables deterministic in-process `MockLLMProvider` for offline CI |
@@ -168,6 +167,6 @@ In addition, `test_200_seeded_trials_ground_truth_recovery` ([tests/test_attribu
 
 - **Synthetic Scope:** Built-in stores A–D are purely synthetic; custom CSV uploads require at least 5 core SKU columns and mark missing signal groups `"not assessable with the data provided"`.
 - **Single-Worker In-Memory State:** `SessionStore`, `UploadedDatasetStore`, `TTSService` cache, and rate limiters reside in process RAM, requiring `--workers 1` cleanly suited for single-instance demos (Redis adapter is future work for multi-replica scaling).
-- **Datacenter TTS Throttling:** Free cloud egress IPs may intermittently throttle Microsoft Edge TTS; VoiceKAM automatically drops to Gemini TTS or client `window.speechSynthesis` (and runs at full neural quality over local Cloudflare Tunnel).
+- **Datacenter TTS Throttling:** Free cloud egress IPs may intermittently throttle Microsoft Edge TTS; VoiceKAM automatically drops to client `window.speechSynthesis` (and runs at full neural quality over local Cloudflare Tunnel).
 - **Privacy Notice:** Do **not** upload real or confidential merchant data — active sessions send compact aggregated tool outputs to configured free-tier external LLM APIs ([docs/PRIVACY.md](docs/PRIVACY.md)).
 - **License:** Released under the [MIT License](LICENSE).

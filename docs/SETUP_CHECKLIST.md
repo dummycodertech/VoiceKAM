@@ -15,7 +15,7 @@
    - **Local:** `.env` -> `GROQ_API_KEY=gsk_...`
    - **Render:** Dashboard -> Service -> **Environment** -> `GROQ_API_KEY`
 
-### B. Google Gemini API Key (`GEMINI_API_KEY`) — Automatic Failover LLM + Optional Emergency TTS
+### B. Google Gemini API Key (`GEMINI_API_KEY`) — Automatic Failover LLM
 1. Sign in at **https://aistudio.google.com/apikey**.
 2. Click **Create API key** -> select/create a free Google Cloud project (no billing card needed) -> copy key.
 3. Save:

@@ -209,7 +209,6 @@ def create_app(
     async def lifespan(app: FastAPI):
         if not skip_startup_probes:
             await router.initialize_and_smoke_test(settings)
-            await tts_service.startup_smoke_test()
             if settings.tts_cache_enabled:
                 default_profile = get_scenario_context().profile
                 warmup_lines = [
@@ -311,10 +310,10 @@ def create_app(
             "llm_startup_smoke": _scrub_secrets(router.startup_report),
             "tts_config": {
                 "provider": settings.tts_provider,
+                "chain": ["edge-tts", "browser"],
                 "voice_en": settings.tts_voice_en,
                 "voice_hi": settings.tts_voice_hi,
-                "active_gemini_tts_model": tts_service.active_gemini_tts_model,
-                "gemini_tts_smoke": _scrub_secrets(tts_service.gemini_tts_smoke_report),
+                "cache_enabled": settings.tts_cache_enabled,
             },
             "features": {
                 "enable_gemini_live": settings.enable_gemini_live,

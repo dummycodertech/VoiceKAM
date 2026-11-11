@@ -51,12 +51,10 @@ class Settings(BaseSettings):
     # STT Fallback: Groq Whisper
     groq_whisper_model: str = "whisper-large-v3-turbo"
 
-    # TTS Settings: auto | edge-tts | gemini-tts | browser
+    # TTS Settings (2-tier): auto | edge-tts | browser
     tts_provider: str = "auto"
     tts_voice_en: str = "en-IN-NeerjaNeural"
     tts_voice_hi: str = "hi-IN-SwaraNeural"
-    gemini_tts_models: str = "gemini-3.8-flash-tts,gemini-2.5-flash-preview-tts"
-    gemini_tts_voice: str = "Aoede"
     tts_cache_enabled: bool = True
 
     # Server & Runtime
@@ -91,9 +89,6 @@ class Settings(BaseSettings):
 
     def gemini_model_list(self) -> list[str]:
         return [m.strip() for m in self.gemini_models.split(",") if m.strip()]
-
-    def gemini_tts_model_list(self) -> list[str]:
-        return [m.strip() for m in self.gemini_tts_models.split(",") if m.strip()]
 
     def branding_dict(self) -> dict[str, str]:
         return {

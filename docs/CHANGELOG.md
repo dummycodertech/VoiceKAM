@@ -76,3 +76,6 @@ The original assessment snapshot remains frozen on `main` at tag `v1.0-assessmen
 - Updated `render.yaml` (`voicekam-virtual-kam`, `plan: free`, `--workers 1`, zero impact on legacy Render services) with Phase 7 security, TTL, upload, and quota environment variables.
 - Updated `.env.example`, `.dockerignore` (excluding `*.zip`, `.eval_cache/`, `frontend_old_backup/`), and `Dockerfile` (OCI metadata labels, `ALLOW_MOCK_LLM=false`, Python native `HEALTHCHECK`, single-worker CMD).
 - Enhanced `scripts/smoke_test.py` to also check `GET /api/scenarios` (`>= 4` scenarios), `GET /api/data/template?format=csv`, and exact revenue reconciliation in `GET /api/demo-data`, and verified end-to-end against a booted Uvicorn instance (`ALL SMOKE CHECKS PASSED`).
+
+## Round 3 — Hardening, Live Evaluation & Polish
+1. **Disable non-functional Gemini TTS tier cleanly:** Verified live Gemini API catalog omits `*-tts` models and rejects `speechConfig` under `generation_config` (`400 INVALID_ARGUMENT` / `404`). Removed Gemini TTS from `app/tts/service.py`, `app/config.py`, `app/main.py` (`/api/health` now reports `"chain": ["edge-tts", "browser"]`), `.env.example`, and all documentation (`2-tier TTS: edge-tts -> browser speechSynthesis`), with tests asserting the 2-tier health schema.

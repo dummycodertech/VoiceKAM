@@ -55,6 +55,8 @@ def test_health_and_demo_data_endpoints():
     body = h.json()
     assert body["status"] == "ok"
     assert "mock:deterministic-test-kam" in body["active_llm_chain"]
+    assert body["tts_config"]["chain"] == ["edge-tts", "browser"]
+    assert "gemini_tts_smoke" not in body["tts_config"]
 
     d = client.get("/api/demo-data")
     assert d.status_code == 200

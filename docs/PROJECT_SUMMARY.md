@@ -27,6 +27,6 @@
 
 ## Resume / Portfolio Bullets
 
-- **Built VoiceKAM**, an open-source, brand-neutral voice AI Key Account Manager (`FastAPI`, `SSE`, `Web Speech API`, `edge-tts`) with server-controlled phase state machine, `en-IN`/`hinglish`/`hi-IN` speakable normalization, and 3-tier voice synthesis fallback (`edge-tts` -> Gemini TTS -> browser `speechSynthesis`).
+- **Built VoiceKAM**, an open-source, brand-neutral voice AI Key Account Manager (`FastAPI`, `SSE`, `Web Speech API`, `edge-tts`) with server-controlled phase state machine, `en-IN`/`hinglish`/`hi-IN` speakable normalization, and 2-tier voice synthesis fallback (`edge-tts` -> browser `speechSynthesis`).
 - **Engineered a counterfactual disjoint attribution engine** combining daily-velocity OOS imputation, in-stock control-group median DiD pricing comparison, net-of-overlap impression funnels, and explicit residual accounting — recovering the true dominant revenue driver in **`200/200` synthetic causal trials (`0.02 pp` MAE)** while safely accepting RAM-only custom seller CSV/JSON uploads.
 - **Eliminated LLM number hallucination & fragile phase drift** via server-side diagnostic tool pre-execution, post-generation numeric token auditing (`100.0%` turn & token grounding across `24` evaluated mock calls), word-boundary intent/negation matching, and `LLMRouter` failover across Groq, Gemini, and OpenRouter with `429` cooldowns, IP rate limits, and daily turn caps.

@@ -32,7 +32,7 @@
 - **Decision:** Chain Groq (filtered live via `/models`), Gemini Flash, and OpenRouter in `LLMRouter` with per-provider `429` cooldowns and `403` lifetime disablement; enforce IP-based sliding-window limits (`X-Forwarded-For` first hop), `DAILY_TURN_CAP=400`, HTTP `413` body caps (`MAX_REQUEST_BYTES`), strict upload validation, and `/api/health` secret scrubbing in [`app/main.py`](../app/main.py).
 - **Trade-off:** Public demo traffic is capped per day and per IP without requiring user accounts or authentication barriers.
 
-### ADR-007: Non-Failing 3-Tier TTS Fallback Chain
-- **Context:** Microsoft Edge neural TTS voices deliver superior Indian English and Devanagari Hindi quality locally, but cloud datacenter egress IPs can intermittently receive HTTP `403`/`429` throttles.
-- **Decision:** Try `edge-tts` (with RAM LRU caching) -> emergency Gemini TTS -> return HTTP `200` JSON (`use_browser_tts: true`) so clients cleanly invoke `window.speechSynthesis` instead of failing calls on HTTP 5xx errors ([`app/tts/service.py`](../app/tts/service.py)).
+### ADR-007: Non-Failing 2-Tier TTS Fallback Chain
+- **Context:** Microsoft Edge neural TTS voices deliver superior Indian English and Devanagari Hindi quality locally, but cloud datacenter egress IPs can intermittently receive HTTP `403`/`429` throttles, and dedicated Gemini TTS models are not exposed cleanly via `generate_content` on this API endpoint (`400 INVALID_ARGUMENT` / `404`).
+- **Decision:** Try `edge-tts` (with RAM LRU caching) -> return HTTP `200` JSON (`use_browser_tts: true`) so clients cleanly invoke `window.speechSynthesis` instead of failing calls on HTTP 5xx errors ([`app/tts/service.py`](../app/tts/service.py)).
 - **Trade-off:** Voice timbre shifts gracefully between neural cloud audio and OS browser synthesis when running inside throttled hosting environments.
