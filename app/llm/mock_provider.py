@@ -136,6 +136,7 @@ class MockLLMProvider(LLMProvider):
 
         snap = _extract_json_marker(sys_text, "BASELINE SNAPSHOT:")
         date_anchors = _extract_json_marker(sys_text, "DATE_ANCHORS:")
+        clarify_state = _extract_json_marker(sys_text, "CLARIFY_STATE:")
         action_state = _extract_json_marker(sys_text, "ACTION_PLAN_STATE:")
         pre_ctx = _extract_json_marker(sys_text, "VERIFIED DATA CONTEXT (cite directly, do not invent figures):")
 
@@ -244,7 +245,16 @@ class MockLLMProvider(LLMProvider):
                 return
 
         reply = self._render_reply(
-            phase, is_followup, lang, last_user, snap, pre_ctx, recent_tools, date_anchors, action_state
+            phase,
+            is_followup,
+            lang,
+            last_user,
+            snap,
+            pre_ctx,
+            recent_tools,
+            date_anchors,
+            action_state,
+            clarify_state,
         )
         for word in reply.split(" "):
             if word:
@@ -281,9 +291,11 @@ class MockLLMProvider(LLMProvider):
         recent_tools: dict[str, dict[str, Any]],
         date_anchors: dict[str, Any] | None = None,
         action_state: dict[str, Any] | None = None,
+        clarify_state: dict[str, Any] | None = None,
     ) -> str:
         date_anchors = date_anchors or {}
         action_state = action_state or {}
+        clarify_state = clarify_state or {}
         due_2d = str(date_anchors.get("due_2d") or "Friday 13 Nov")
         followup_3d = str(date_anchors.get("followup_3d") or "Saturday 14 Nov at 11:00 AM IST")
         raw_sal = str(snap.get("salutation") or "").strip()
@@ -324,13 +336,31 @@ class MockLLMProvider(LLMProvider):
 
         if phase == "UNDERSTAND":
             if any(w in last_user for w in ("angry", "frustrated", "fed up", "cancel", "waste", "useless", "problem")):
-                return f"I understand how frustrating this drop is{sal_comma}. What changed in your operations recently?"
-            return f"I understand how worrying this drop is{sal_comma}. What changed in your operations recently?"
+                return "I hear how frustrating this drop is. What operational bottleneck hit your store first this month?"
+            return "I understand how concerning this drop is. What held up restocking your key products recently?"
 
         if phase == "CLARIFY":
-            if "stock" in last_user or "out" in last_user or "yes" in last_user or "supplier" in last_user:
-                return f"Understood{sal_comma}. Were there any dispatch delays or competitor price changes recently?"
-            return "I see. Did you notice any supplier restock delays or competitor price changes recently?"
+            if any(w in last_user for w in ("supplier", "stock", "restock", "budget")):
+                ack = "Makes sense on the restock delay."
+            elif any(w in last_user for w in ("dispatch", "pickup", "sync", "cutoff", "courier")):
+                ack = "Noted on the dispatch timing."
+            elif any(w in last_user for w in ("price", "competitor", "margin", "discount")):
+                ack = "I hear you on the pricing pressure."
+            elif any(w in last_user for w in ("ad", "keyword", "search", "listing")):
+                ack = "Understood about the listing changes."
+            else:
+                q_idx = int(clarify_state.get("questions_asked") or 0)
+                ack = ("Understood.", "I see.", "Makes sense.")[q_idx % 3]
+
+            topic = str(clarify_state.get("next_topic") or "dispatch_cutoff")
+            topic_questions = {
+                "restock_delay": "What delayed restocking the out-of-stock products — supplier lead time or cash flow?",
+                "dispatch_cutoff": "Were afternoon dispatch cutoffs or warehouse stock updates delayed?",
+                "competitor_pricing": "Did competitors lower prices recently, or are margins limiting price matching?",
+                "visibility_catalog": "Were search ads paused or catalog keywords edited recently?",
+                "operations_general": "Was any other fulfillment step slowed down this month?",
+            }
+            return f"{ack} {topic_questions.get(topic, topic_questions['operations_general'])}"
 
         if phase in ("DIAGNOSE", "REVIEW_COMMITMENTS"):
             if is_followup:

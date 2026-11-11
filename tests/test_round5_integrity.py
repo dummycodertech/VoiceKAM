@@ -259,3 +259,78 @@ async def test_group3_consent_gate_one_action_per_turn_and_summary_sections():
     joined_issues = " ".join(card["key_issues"]).lower()
     assert "flat" in joined_issues or "average selling price" in joined_issues
     assert "stock" in joined_issues and ("pric" in joined_issues or "visibility" in joined_issues or "cancel" in joined_issues)
+
+
+def test_group4_spoken_register_ranges_codes_eligibility_and_cadence():
+    from app.agent.session import SessionStore
+    from app.agent.speakable import enforce_spoken_cadence_and_register, to_speakable_text
+
+    ctx = _load_brief_context()
+
+    # 1. Ranges use "to" in en-IN, hinglish, and hi-IN; .0% omitted; no ASP/SKU/OOS/funnel/codes
+    rng_text = "Rs 22,200 - Rs 28,500/month recovery, 50.0% drop across HK-008 OOS SKU funnel ASP."
+    out_en = to_speakable_text(rng_text, "en-IN", seller_context=ctx)
+    assert "twenty-two thousand two hundred to twenty-eight thousand five hundred rupees a month" in out_en
+    assert "point zero" not in out_en and "fifty percent" in out_en
+    for forbidden in ("asp", "sku", "oos", "funnel", "hk-008"):
+        assert forbidden not in out_en.lower()
+    assert "Insulated Steel Casserole Set" in out_en
+
+    out_hg = to_speakable_text(rng_text, "hinglish", seller_context=ctx)
+    assert "twenty-two thousand two hundred to twenty-eight thousand five hundred rupaye a month" in out_hg
+    assert "fifty percent" in out_hg
+
+    out_hi = to_speakable_text(rng_text, "hi-IN", seller_context=ctx)
+    assert "-" not in out_hi
+    assert "रुपये" in out_hi and (" टू " in out_hi or " to " in out_hi)
+    assert "दशमलव शून्य" not in out_hi and "पचास प्रतिशत" in out_hi
+
+    # 2. Never say "Seller Partner" or "Custom Uploaded Store" in speech; cap product names at 2
+    default_ctx = parse_uploaded_csv(
+        (ROOT / "brief_scenario_skus.csv").read_bytes(),
+        cancellations_csv_bytes=(ROOT / "brief_scenario_cancellations.csv").read_bytes(),
+    )
+    store = SessionStore()
+    s = store.create(mode="inbound", language="en-IN", seller_context=default_ctx)
+    bad = (
+        "Got it, Seller Partner at Custom Uploaded Store! "
+        "HK-008, HK-007, and HK-009 qualify subject to eligibility and also subject to eligibility."
+    )
+    cleaned = enforce_spoken_cadence_and_register(bad, session=s, turn_count=0)
+    assert "seller partner" not in cleaned.lower()
+    assert "custom uploaded store" not in cleaned.lower()
+    assert cleaned.lower().count("subject to eligibility") == 1
+    assert "Insulated Steel Casserole Set" in cleaned
+    assert "Airtight Kitchen Storage Jars" not in cleaned  # 3rd product capped cleanly
+
+    # Second turn in same call: "subject to eligibility" stripped; repeated "Got it" & salutation throttled
+    s2 = store.create(mode="inbound", language="en-IN", seller_context=ctx)
+    t0 = enforce_spoken_cadence_and_register("Got it, Ananya ji! Promos are subject to eligibility.", session=s2, turn_count=0)
+    t1 = enforce_spoken_cadence_and_register("Got it, Ananya ji! Promos are subject to eligibility.", session=s2, turn_count=1)
+    assert "got it" in t0.lower() and "ananya ji" in t0.lower()
+    assert "got it" not in t1.lower() and "ananya" not in t1.lower()
+    assert "subject to eligibility" not in t1.lower()
+
+
+async def test_group4_clarify_topics_non_repeating_non_redundant_and_max_3():
+    ctx = _load_brief_context()
+    store = SessionStore()
+    session = store.create(mode="proactive", language="en-IN", seller_context=ctx)
+    router = LLMRouter([MockLLMProvider()])
+    orch = AgentOrchestrator(router)
+
+    await _collect_turn(orch, session, None)  # GREETING (notes 18 products OOS)
+    q1 = await _collect_turn(orch, session, "Yes, I have 2 minutes, please go ahead.")  # GREETING -> CLARIFY (Q1)
+    q2 = await _collect_turn(orch, session, "Our supplier shipments slipped by a week.")  # CLARIFY (Q2)
+    q3 = await _collect_turn(orch, session, "Yes pickup cutoffs were missed too.")  # CLARIFY (Q3)
+    d4 = await _collect_turn(orch, session, "Yes competitors cut prices slightly.")  # -> DIAGNOSE after 3 Qs
+
+    assert session.clarify_questions_asked == 3
+    assert len(session.clarify_topics_asked) == len(set(session.clarify_topics_asked)) >= 3
+    for q_ev in (q1, q2, q3):
+        low = q_ev["done"]["text"].lower()
+        assert "were any bestsellers out of stock" not in low
+        assert "run out of stock" not in low
+        assert "gone out of stock" not in low
+    assert session.phase.value in ("DIAGNOSE", "RECOMMEND")
+    assert d4["done"]["text"]

@@ -12,6 +12,7 @@ from app.agent.session import Phase, SessionState
 from app.agent.speakable import (
     audit_projection_claims,
     detect_premature_causal_claims,
+    enforce_spoken_cadence_and_register,
     enforce_voice_length,
     extract_numbers_from_obj,
     find_ungrounded_numbers,
@@ -24,6 +25,7 @@ from app.agent.state_machine import (
     advance_phase_before_turn,
     all_actions_resolved,
     build_system_prompt,
+    detect_clarify_topic,
     detect_confirmation_ask,
     next_pending_action,
     sync_action_plan_to_session,
@@ -438,6 +440,9 @@ class AgentOrchestrator:
                     f"How can I help {shop_name} today?"
                 )
 
+            greeting = enforce_spoken_cadence_and_register(
+                greeting, session=session, turn_count=session.turn_count
+            )
             session.messages.append(CanonicalMessage(role="assistant", content=greeting))
             yield _sse("token", {"text": greeting})
             yield _sse(
@@ -787,6 +792,15 @@ class AgentOrchestrator:
                     ),
                 },
             )
+        cleaned_reply = enforce_spoken_cadence_and_register(
+            cleaned_reply,
+            session=session,
+            turn_count=session.turn_count,
+        )
+        if session.phase in (Phase.UNDERSTAND, Phase.CLARIFY):
+            c_topic = detect_clarify_topic(cleaned_reply)
+            if c_topic and c_topic not in session.clarify_topics_asked:
+                session.clarify_topics_asked.append(c_topic)
         ungrounded = find_ungrounded_numbers(
             cleaned_reply,
             session.grounded_numbers,

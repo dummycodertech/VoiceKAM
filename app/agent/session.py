@@ -83,6 +83,7 @@ class SessionState:
             "phase": self.phase.value,
             "turn_count": self.turn_count,
             "clarify_questions_asked": self.clarify_questions_asked,
+            "clarify_topics_asked": list(self.clarify_topics_asked),
             "dataset": self.seller_context.summary_dict(),
             "tool_history": self.tool_history,
             "commitments": self.commitments,

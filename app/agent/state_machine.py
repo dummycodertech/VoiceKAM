@@ -439,6 +439,79 @@ def advance_phase_before_turn(session: SessionState, user_text: str) -> Phase:
     return session.phase
 
 
+_CLARIFY_TOPIC_POOL: list[tuple[str, str]] = [
+    ("restock_delay", "Ask why restocking your out-of-stock products has been delayed (supplier or budget bottleneck)."),
+    ("dispatch_cutoff", "Ask whether afternoon dispatch cutoffs or warehouse stock sync caused order cancellations."),
+    ("competitor_pricing", "Ask whether competitor price drops impacted orders and if margins allow price matching."),
+    ("visibility_catalog", "Ask whether search ads were paused or catalog attributes changed recently."),
+]
+
+
+def already_answered_by_data(
+    headline: dict[str, Any],
+    diag: dict[str, Any],
+) -> list[str]:
+    """Return concrete facts already answered in the dataset so CLARIFY never asks redundant questions."""
+    m = headline["metrics"]
+    answered: list[str] = []
+    oos_curr = m["out_of_stock_skus"]["current"]
+    if oos_curr is not None and oos_curr > 0:
+        answered.append(f"{oos_curr} products are already out of stock (never ask if items went out of stock).")
+    asp_curr = m["asp"]["current"]
+    if diag.get("asp_flat"):
+        answered.append(f"Average price stayed steady around {format_inr(asp_curr)} (never ask if ticket size fell).")
+    cancel_curr = m["cancellation_rate_pct"]["current"]
+    if cancel_curr is not None:
+        answered.append(f"Cancellation rate is {cancel_curr}% (never ask if cancellations happened).")
+    return answered
+
+
+def select_next_clarify_topic(
+    session: SessionState,
+    headline: dict[str, Any] | None = None,
+    diag: dict[str, Any] | None = None,
+) -> tuple[str, str]:
+    """Pick the next unasked non-redundant clarifying topic for CLARIFY (max 3 total)."""
+    asked = set(getattr(session, "clarify_topics_asked", None) or [])
+    if headline is None:
+        headline = diagnosis.compute_headline_metrics(session.seller_context, session.snapshot)
+    if diag is None:
+        diag = diagnosis.run_diagnosis(session.seller_context, session.snapshot)
+    comp = session.seller_context.completeness
+    for topic_key, guidance in _CLARIFY_TOPIC_POOL:
+        if topic_key in asked:
+            continue
+        if topic_key == "competitor_pricing" and comp is not None and not comp.pricing_assessable:
+            continue
+        if topic_key == "visibility_catalog" and comp is not None and not comp.visibility_assessable:
+            continue
+        if topic_key == "dispatch_cutoff" and comp is not None and not comp.cancellations_assessable:
+            continue
+        return topic_key, guidance
+    return ("operations_general", "Ask one brief question about what operational constraint is delaying recovery.")
+
+
+def detect_clarify_topic(text: str) -> str | None:
+    raw = (text or "").strip()
+    if not raw:
+        return None
+    # Inspect the actual question sentence first so the 1-clause answer acknowledgement doesn't shadow the topic
+    sentences = [s.strip() for s in re.split(r"(?<=[.?!\u0964])\s+", raw) if s.strip()]
+    q_sents = [s for s in sentences if "?" in s]
+    low = (q_sents[-1] if q_sents else raw).lower()
+    if re.search(r"\b(?:restock|supplier|lead\s+time|replenish|out[- ]of[- ]stock|went\s+out|out\s+of\s+stock)\b", low):
+        return "restock_delay"
+    if re.search(r"\b(?:dispatch|cutoff|pickup|sync|sla|cancel|warehouse)\b", low):
+        return "dispatch_cutoff"
+    if re.search(r"\b(?:price|pricing|competitor|margin|discount)\b", low):
+        return "competitor_pricing"
+    if re.search(r"\b(?:ads?|sponsored|keyword|impression|visibility|catalog|listing)\b", low):
+        return "visibility_catalog"
+    if "?" in raw:
+        return "operations_general"
+    return None
+
+
 def advance_phase_after_turn(session: SessionState) -> Phase:
     """Track per-phase turn counters."""
     p = session.phase
@@ -506,19 +579,23 @@ def _phase_instruction(
         return f"GOAL: Greet {salutation} warmly and ask how you can help {shop_name} today."
 
     if p == Phase.UNDERSTAND:
+        answered = already_answered_by_data(headline, diag)
+        no_repeat = f" ALREADY IN DATA (do NOT ask about these): {'; '.join(answered)}" if answered else ""
         return (
-            "GOAL: Empathize sincerely with the revenue decline (never defensive), acknowledge their concern, "
-            "and ask 1 focused question about what changed in their operations recently."
+            "GOAL: Empathize sincerely with the revenue decline in one short clause (never defensive), "
+            "and ask 1 focused question about supplier restock delays, dispatch timing, or pricing bottlenecks." + no_repeat
         )
 
     if p == Phase.CLARIFY:
-        asp_note = (
-            f" (ASP stayed steady around {format_inr(asp_curr)})" if diag.get("asp_flat") else f" (ASP shifted to {format_inr(asp_curr)})"
-        )
+        topic_key, topic_guide = select_next_clarify_topic(session, headline, diag)
+        asked_list = list(getattr(session, "clarify_topics_asked", None) or [])
+        answered = already_answered_by_data(headline, diag)
+        answered_note = f" ALREADY KNOWN (NEVER ask): {'; '.join(answered)}." if answered else ""
+        asked_note = f" ALREADY ASKED TOPICS (NEVER repeat): {', '.join(asked_list)}." if asked_list else ""
         return (
-            f"GOAL: Clarify root causes (question {session.clarify_questions_asked + 1} of 3 max). Ask ONE short non-redundant question "
-            "(e.g. restocking delays on bestsellers, dispatch/stock-sync delays, or recent competitor price changes). "
-            f"NEVER ask if ticket size/ASP collapsed if the data already shows it{asp_note}."
+            f"GOAL: Clarify root causes (question {session.clarify_questions_asked + 1} of 3 max, topic={topic_key}). "
+            "Start with ONE short clause acknowledging the seller's previous answer, then ask ONE focused non-redundant question: "
+            f"{topic_guide}{asked_note}{answered_note}"
         )
 
     if p == Phase.REVIEW_COMMITMENTS:
@@ -664,19 +741,21 @@ def build_system_prompt(
     }
 
     lines = [
-        f"You are {agent_name}, a warm, proactive Virtual Key Account Manager for an online marketplace speaking with {seller_name} ({salutation}) of {shop_name}{city_part}.",
+        f"You are {agent_name}, a warm, proactive Virtual Key Account Manager speaking with {seller_name} ({salutation}) of {shop_name}{city_part}.",
         _language_rule(session.language, salutation),
         f"CURRENT PHASE: {session.phase.value} | SNAPSHOT: {session.snapshot} | SCENARIO: {profile.scenario_id}",
         f"CURRENT_DATE_IST: {date_anchors['today_ist']} (Asia/Kolkata)",
         "STRICT VOICE RULES:",
-        "- Keep replies to 1-2 short sentences (under 35 words; max 45 words; SUMMARY up to 75 words).",
-        "- Ask at most ONE question per turn. Use natural acknowledgments ('Got it', 'I understand').",
+        "- Keep replies to 1-2 short sentences (under 35 words; max 45 words; SUMMARY up to 74 words).",
+        "- Ask at most ONE question per turn. Vary acknowledgements ('Understood', 'Makes sense', 'I see'; use 'Got it' at most once per 3 turns).",
+        "- Address the seller by their real name or 'you' (use a salutation at most once per 3 turns; NEVER say 'Seller Partner' or 'Custom Uploaded Store').",
+        "- Spoken register: NEVER say 'ASP', 'SKU', 'OOS', 'funnel', product codes (like 'HK-008'), or '.0%' (say '50%'). Name at most 2 products per turn.",
         "- NO markdown, NO bullet lists, NO emojis, NO headings, NO internal reasoning.",
         "- NEVER invent or calculate numbers; speak ONLY numbers present in BASELINE SNAPSHOT or VERIFIED DATA CONTEXT.",
         "- Quote outcome projections (like projected_oos_after_restock) ONLY from VERIFIED DATA CONTEXT['projections']; never invent post-action counts.",
         "- NEVER invent dates or weekdays; use ONLY code-computed IST dates from DATE_ANCHORS or VERIFIED DATA CONTEXT.",
         "- Format ALL rupee and large numbers using Indian digit grouping (e.g. Rs 1,35,000 and Rs 2,00,000, never Western 135,000).",
-        "- Keep recommendations marketplace-agnostic: never claim guaranteed outcomes or real marketplace program names; qualify promos/ads with 'subject to eligibility'.",
+        "- Keep recommendations marketplace-agnostic: never claim guaranteed outcomes or real marketplace program names; say 'subject to eligibility' at most once per call.",
         "- If a driver or metric is missing from the uploaded file, explicitly say it is 'not assessable with the data provided' and never guess.",
         "- If seller is angry or off-topic, empathize briefly and steer back to recovering their sales.",
     ]
@@ -731,6 +810,16 @@ def build_system_prompt(
         },
         "all_resolved": all_actions_resolved(session),
     }
+    next_topic_key, next_topic_guide = select_next_clarify_topic(session, headline, diag)
+    clarify_state = {
+        "questions_asked": session.clarify_questions_asked,
+        "max_questions": 3,
+        "topics_asked": list(getattr(session, "clarify_topics_asked", None) or []),
+        "next_topic": next_topic_key,
+        "next_topic_guidance": next_topic_guide,
+        "already_answered": already_answered_by_data(headline, diag),
+    }
+    lines.append("CLARIFY_STATE: " + json.dumps(clarify_state, ensure_ascii=False))
     lines.append("ACTION_PLAN_STATE: " + json.dumps(action_plan_state, ensure_ascii=False))
     if session.commitments:
         lines.append("COMMITMENTS LOGGED: " + json.dumps(session.commitments, ensure_ascii=False))
