@@ -1,9 +1,12 @@
-"""Speakable-text normalizer (rupee amounts, percentages, abbreviations) and number-grounding checker."""
+"""Speakable-text normalizer (en-IN/hi-IN rupee & percentage phrasing) and SellerContext grounding checker."""
 
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any, Iterable
+
+if TYPE_CHECKING:
+    from app.data.context import SellerContext
 
 # Common Indian marketplace / voice phrasing expansions
 _ABBREV_MAP = [
@@ -26,6 +29,20 @@ _ONES = [
     "seventeen", "eighteen", "nineteen",
 ]
 _TENS = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"]
+
+# Standard Hindi number words (0..99) in Devanagari for natural hi-IN speech
+_HI_NUMBERS_0_99 = [
+    "शून्य", "एक", "दो", "तीन", "चार", "पाँच", "छह", "सात", "आठ", "नौ",
+    "दस", "ग्यारह", "बारह", "तेरह", "चौदह", "पंद्रह", "सोलह", "सत्रह", "अठारह", "उन्नीस",
+    "बीस", "इक्कीस", "बाईस", "तेईस", "चौबीस", "पच्चीस", "छब्बीस", "सत्ताईस", "अट्ठाईस", "उनतीस",
+    "तीस", "इकतीस", "बत्तीस", "तैंतीस", "चौंतीस", "पैंतीस", "छत्तीस", "सैंतीस", "अड़तीस", "उनतालीस",
+    "चालीस", "इकतालीस", "बयालीस", "तैंतालीस", "चवालीस", "पैंतालीस", "छियालीस", "सैंतालीस", "अड़तालीस", "उनचास",
+    "पचास", "इक्यावन", "बावन", "तिरेपन", "चौवन", "पचपन", "छप्पन", "सत्तावन", "अट्ठावन", "उनसठ",
+    "साठ", "इकसठ", "बासठ", "तिरसठ", "चौंसठ", "पैंसठ", "छियासठ", "सड़सठ", "अड़सठ", "उनहत्तर",
+    "सत्तर", "इकहत्तर", "बहत्तर", "तिहत्तर", "चौहत्तर", "पचहत्तर", "छिहत्तर", "सतहत्तर", "अठहत्तर", "उनासी",
+    "अस्सी", "इक्यासी", "बयासी", "तिरासी", "चौरासी", "पचासी", "छियासी", "सत्तासी", "अट्ठासी", "नवासी",
+    "नब्बे", "इक्यानवे", "बानवे", "तिरानवे", "चौरानवे", "पचानवे", "छियानवे", "सत्तानवे", "अट्ठानवे", "निन्यानवे",
+]
 
 
 def _two_digits_en(n: int) -> str:
@@ -66,6 +83,37 @@ def int_to_indian_english(n: int) -> str:
     return " ".join(parts)
 
 
+def _under_thousand_hi(n: int) -> str:
+    h, rem = divmod(n, 100)
+    parts = []
+    if h:
+        parts.append(f"{_HI_NUMBERS_0_99[h]} सौ")
+    if rem:
+        parts.append(_HI_NUMBERS_0_99[rem])
+    return " ".join(parts)
+
+
+def int_to_indian_hindi(n: int) -> str:
+    """Convert integer into natural Indian Hindi words (हज़ार / लाख / करोड़)."""
+    if n == 0:
+        return _HI_NUMBERS_0_99[0]
+    if n < 0:
+        return "माइनस " + int_to_indian_hindi(-n)
+    parts = []
+    crore, rem = divmod(n, 10_000_000)
+    if crore:
+        parts.append(f"{int_to_indian_hindi(crore)} करोड़")
+    lakh, rem = divmod(rem, 100_000)
+    if lakh:
+        parts.append(f"{_HI_NUMBERS_0_99[lakh]} लाख")
+    thousand, rem = divmod(rem, 1_000)
+    if thousand:
+        parts.append(f"{_HI_NUMBERS_0_99[thousand]} हज़ार")
+    if rem:
+        parts.append(_under_thousand_hi(rem))
+    return " ".join(parts)
+
+
 def decimal_to_spoken_en(num_str: str) -> str:
     clean = num_str.replace(",", "").strip()
     if "." in clean:
@@ -76,9 +124,18 @@ def decimal_to_spoken_en(num_str: str) -> str:
     return int_to_indian_english(int(clean))
 
 
+def decimal_to_spoken_hi(num_str: str) -> str:
+    clean = num_str.replace(",", "").strip()
+    if "." in clean:
+        whole_s, frac_s = clean.split(".", 1)
+        whole_words = int_to_indian_hindi(int(whole_s)) if whole_s else _HI_NUMBERS_0_99[0]
+        frac_words = " ".join(_HI_NUMBERS_0_99[int(d)] for d in frac_s if d.isdigit())
+        return f"{whole_words} दशमलव {frac_words}".strip()
+    return int_to_indian_hindi(int(clean))
+
+
 def strip_reasoning_and_markdown(text: str) -> str:
     """Strip <think> blocks, markdown formatting, emojis, and excess whitespace."""
-    # Normalize smart typography before character filtering so contractions don't split ("You'll" != "You ll")
     text = (
         text.replace("\u2019", "'")
         .replace("\u2018", "'")
@@ -90,77 +147,90 @@ def strip_reasoning_and_markdown(text: str) -> str:
     )
     text = re.sub(r"<think>.*?</think>", " ", text, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r"</?think>", " ", text, flags=re.IGNORECASE)
-    # Strip markdown headings, bold/italic, inline code, bullet markers
     text = re.sub(r"^#{1,6}\s*", "", text, flags=re.MULTILINE)
     text = re.sub(r"^\s*[-*•]\s+", "", text, flags=re.MULTILINE)
     text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
     text = re.sub(r"\*([^*]+)\*", r"\1", text)
     text = re.sub(r"`([^`]+)`", r"\1", text)
-    # Strip emojis / pictographs while preserving ASCII/Devanagari letters, punctuation, <= >= + & ₹
     text = re.sub(r"[^\w\s.,?!:;'\-\"/%₹()<>+=&\u0900-\u097F\u0964]+", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
 
-def to_speakable_text(text: str, language: str = "en-IN") -> str:
-    """Normalize caption text into natural TTS-ready speech."""
+def to_speakable_text(
+    text: str,
+    language: str = "en-IN",
+    seller_context: SellerContext | None = None,
+) -> str:
+    """Normalize caption text into natural TTS-ready speech in en-IN, hinglish, or hi-IN."""
     s = strip_reasoning_and_markdown(text)
     if not s:
         return ""
 
-    # Replace arrows and ranges
-    s = s.replace("->", " to ")
-    s = s.replace("–", " to ")
+    s = s.replace("->", " टू " if language == "hi-IN" else " to ")
+    s = s.replace("–", " टू " if language == "hi-IN" else " to ")
     s = re.sub(r"\s+to\s+to\s+", " to ", s)
 
-    # Expand abbreviations and SKU codes like HK-006 -> product H K 006 or product
     for pattern, repl in _ABBREV_MAP:
         s = pattern.sub(repl, s)
 
-    # Convert SKU IDs like HK-006 into clear speech ("H K 6")
-    def _sku_repl(m: re.Match[str]) -> str:
-        num = int(m.group(1))
-        return f"product {num}"
+    # Expand explicit SellerContext SKU IDs first, then generic ALPHA-001 style SKU identifiers
+    if seller_context is not None and seller_context.skus:
+        for sku in seller_context.skus:
+            if sku.sku_id and sku.sku_id in s:
+                m_digits = re.search(r"(\d+)$", sku.sku_id)
+                if m_digits:
+                    lbl = f"प्रोडक्ट {int(m_digits.group(1))}" if language == "hi-IN" else f"product {int(m_digits.group(1))}"
+                    s = re.sub(rf"\b{re.escape(sku.sku_id)}\b", lbl, s)
 
-    s = re.sub(r"\bHK-0*(\d+)\b", _sku_repl, s)
+    def _generic_sku_repl(m: re.Match[str]) -> str:
+        num = int(m.group(1))
+        return f"प्रोडक्ट {num}" if language == "hi-IN" else f"product {num}"
+
+    s = re.sub(r"\b[A-Z]{2,8}-0*(\d+)\b", _generic_sku_repl, s)
 
     # Convert rupee amounts: Rs 2,00,000 | Rs. 500 | ₹1,35,000 | INR 65,000
-    currency_word = "rupaye" if language in ("hi-IN", "hinglish") else "rupees"
+    if language == "hi-IN":
+        currency_word = "रुपये"
+    elif language == "hinglish":
+        currency_word = "rupaye"
+    else:
+        currency_word = "rupees"
 
     def _rupee_repl(m: re.Match[str]) -> str:
         raw_num = m.group(1).replace(",", "")
         try:
-            if "." in raw_num:
-                spoken = decimal_to_spoken_en(raw_num)
+            if language == "hi-IN":
+                spoken = decimal_to_spoken_hi(raw_num)
             else:
-                spoken = int_to_indian_english(int(raw_num))
+                spoken = decimal_to_spoken_en(raw_num)
             return f"{spoken} {currency_word}"
         except ValueError:
             return m.group(0)
 
     s = re.sub(r"(?:₹|Rs\.?|INR)\s*([0-9][0-9,]*(?:\.[0-9]+)?)", _rupee_repl, s, flags=re.IGNORECASE)
 
-    # Convert percentages: 32.5% -> thirty-two point five percent (or pratishat/percent)
-    pct_word = "percent"
+    # Convert percentages cleanly
+    pct_word = "प्रतिशत" if language == "hi-IN" else "percent"
 
     def _pct_repl(m: re.Match[str]) -> str:
         raw_num = m.group(1).replace(",", "")
         try:
-            spoken = decimal_to_spoken_en(raw_num)
+            spoken = decimal_to_spoken_hi(raw_num) if language == "hi-IN" else decimal_to_spoken_en(raw_num)
             return f"{spoken} {pct_word}"
         except ValueError:
             return m.group(0)
 
     s = re.sub(r"([0-9][0-9,]*(?:\.[0-9]+)?)\s*%", _pct_repl, s)
 
-    # Clean <= and >= symbols
-    s = s.replace("<=", "at most ").replace(">=", "at least ")
+    s = s.replace("<=", "कम से कम " if False else ("अधिकतम " if language == "hi-IN" else "at most "))
+    s = s.replace(">=", "न्यूनतम " if language == "hi-IN" else "at least ")
     s = re.sub(r"\s+", " ", s).strip()
     return s
 
 
 def enforce_voice_length(text: str, phase: str, max_words: int = 45) -> str:
-    """Keep spoken turns crisp and within the voice word-count budget without ugly mid-phrase cuts."""
+    """Keep spoken turns crisp and within the voice word-count budget without mid-phrase cuts."""
     clean = strip_reasoning_and_markdown(text)
     limit = 75 if phase == "SUMMARY" else max_words
     soft_limit = 82 if phase == "SUMMARY" else (55 if phase in ("DIAGNOSE", "RECOMMEND") else limit)
@@ -168,7 +238,6 @@ def enforce_voice_length(text: str, phase: str, max_words: int = 45) -> str:
     if len(words) <= limit:
         return clean
 
-    # Trim cleanly at sentence boundary inside soft_limit if possible
     sentences = re.split(r"(?<=[.?!\u0964])\s+", clean)
     kept: list[str] = []
     running = 0
@@ -218,28 +287,43 @@ def extract_numbers_from_obj(obj: Any) -> set[float]:
     return nums
 
 
-# Non-metric conversational numbers allowed in natural dialogue (e.g. "2 minutes", "3 days", "48 hours", "2 PM", "top 5")
+# Non-metric conversational numbers allowed in natural dialogue (dataset-agnostic)
 _CONVERSATIONAL_ALLOW_PATTERNS = [
     re.compile(r"\b\d+\s*(?:minutes?|mins?|days?|hours?|hrs?|weeks?|months?|seconds?|pm|am)\b", re.IGNORECASE),
-    re.compile(r"\b(?:priority|top|step|action|option|number)\s*\d+\b", re.IGNORECASE),
-    re.compile(r"\bHK-\d+\b", re.IGNORECASE),
+    re.compile(r"\b(?:priority|top|step|action|option|number|scenario)\s*\d+\b", re.IGNORECASE),
     re.compile(r"\bACT-(?:FU-)?\d+\b", re.IGNORECASE),
+    re.compile(r"\b[A-Z]{2,8}-\d+\b", re.IGNORECASE),
     re.compile(r"\b\d+\s*(?:to|-)\s*\d+\b"),
-    re.compile(r"\b5L\b|\b28cm\b|\b3Pc\b|\b12Pc\b|\b1\.5L\b|\b5Pc\b", re.IGNORECASE),
+    re.compile(r"\b\d+(?:\.\d+)?\s*(?:L|ml|kg|g|cm|mm|m|Pc|pcs|W|GHz|GB|MB)\b", re.IGNORECASE),
+    re.compile(r"\b\d+-in-\d+\b|\b\d+-Pack\b|\b\d+pc\b", re.IGNORECASE),
 ]
 
 
-def find_ungrounded_numbers(reply: str, grounded_numbers: set[float]) -> list[str]:
+def find_ungrounded_numbers(
+    reply: str,
+    grounded_numbers: set[float],
+    seller_context: SellerContext | None = None,
+    allowed_sku_ids: Iterable[str] | None = None,
+) -> list[str]:
     """Return any metric numbers in reply that cannot be traced to tool outputs."""
     if not reply or not grounded_numbers:
         return []
 
     masked = reply
+    # Mask any explicit SellerContext SKU IDs first so digits inside custom SKU IDs are never flagged
+    sku_id_pool: list[str] = []
+    if seller_context is not None:
+        sku_id_pool.extend(s.sku_id for s in seller_context.skus if s.sku_id)
+    if allowed_sku_ids is not None:
+        sku_id_pool.extend(str(sid) for sid in allowed_sku_ids if sid)
+    for sid in sku_id_pool:
+        if sid in masked:
+            masked = re.sub(re.escape(sid), " SKU_ID ", masked)
+
     for pat in _CONVERSATIONAL_ALLOW_PATTERNS:
         masked = pat.sub(" ", masked)
 
     ungrounded: list[str] = []
-    # Also include rounded integer & 1-decimal forms of grounded numbers
     expanded: set[float] = set(grounded_numbers)
     for g in list(grounded_numbers):
         expanded.add(round(g))
@@ -251,11 +335,9 @@ def find_ungrounded_numbers(reply: str, grounded_numbers: set[float]) -> list[st
             val = float(token.replace(",", ""))
         except ValueError:
             continue
-        # Small ordinals 1..3 used naturally in phrasing ("1 question", "2 actions")
         if val in (1.0, 2.0, 3.0):
             continue
         if any(abs(val - g) <= 0.05 for g in expanded):
             continue
         ungrounded.append(token)
     return ungrounded
-

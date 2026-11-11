@@ -1,8 +1,9 @@
-"""Server-controlled conversation phase state machine & compact prompt builder."""
+"""Server-controlled conversation phase state machine & SellerContext-parameterized prompt builder."""
 
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from app.agent.session import Phase, SessionState
@@ -10,19 +11,50 @@ from app.config import get_settings
 from app.engine import diagnosis
 from app.engine.tools import TOOL_SCHEMAS
 
-# Signals for deterministic server phase transitions
-_DIAGNOSIS_REQUEST_SIGNALS = (
-    "why", "reason", "cause", "dropped", "drop", "declined", "happened",
-    "check", "data", "numbers", "tell me", "what's wrong", "kya hua", "kyu",
+# Precompiled word-boundary regexes (avoid substring bugs like "look"/"broken" triggering "ok")
+_DIAGNOSIS_REQUEST_RE = re.compile(
+    r"\b(?:"
+    r"what's wrong|whats wrong|what happened|check my data|tell me why|"
+    r"tell me|show me|you check|aap check|kya hua|"
+    r"why|reason|cause|dropped|drop|declined|happened|check|data|numbers|kyu|kya"
+    r")\b",
+    re.IGNORECASE,
 )
-_BUY_IN_SIGNALS = (
-    "yes", "yeah", "yep", "sure", "okay", "ok", "haan", "theek", "kar", "let's do",
-    "makes sense", "what should i do", "next", "action", "fix", "recommend", "plan",
+
+_PROACTIVE_WHY_RE = re.compile(
+    r"\b(?:what happened|tell me|kya hua|why|kyu|kya)\b",
+    re.IGNORECASE,
 )
-_COMMIT_SIGNALS = (
-    "commit", "promise", "i will", "will do", "friday", "monday", "tuesday",
-    "tomorrow", "kal", "48 hours", "today", "aaj", "days", "agree", "done", "yes", "haan", "ok",
+
+_CLARIFY_DATA_NOW_RE = re.compile(
+    r"\b(?:check my data|show me|tell me why|you check|aap check)\b",
+    re.IGNORECASE,
 )
+
+_BUY_IN_RE = re.compile(
+    r"\b(?:"
+    r"what should i do|makes sense|theek hai|let's do|lets do|kar sakte|"
+    r"yes|yeah|yep|sure|okay|ok|haan|theek|kar|next|action|fix|recommend|plan|agree"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_NEGATION_RE = re.compile(
+    r"\b(?:no|not|don't|dont|do not|cannot|can't|cant|won't|wont|nahi|nahin|na)\b",
+    re.IGNORECASE,
+)
+
+
+def is_diagnosis_request(text: str) -> bool:
+    """Return True when the utterance asks for root causes or data inspection."""
+    return bool(_DIAGNOSIS_REQUEST_RE.search(text or ""))
+
+
+def is_buy_in(text: str) -> bool:
+    """Return True for genuine buy-in; simple negation in the same utterance cancels buy-in."""
+    if not text or _NEGATION_RE.search(text):
+        return False
+    return bool(_BUY_IN_RE.search(text))
 
 
 def tools_for_phase(phase: Phase) -> list[dict[str, Any]]:
@@ -46,19 +78,19 @@ def tools_for_phase(phase: Phase) -> list[dict[str, Any]]:
 
 def advance_phase_before_turn(session: SessionState, user_text: str) -> Phase:
     """Deterministically advance phase BEFORE generating the agent's reply."""
-    low = user_text.lower()
+    text = user_text.strip()
     p = session.phase
 
     if p == Phase.GREETING:
         if session.mode == "followup":
             session.phase = Phase.REVIEW_COMMITMENTS
         elif session.mode == "proactive":
-            if any(k in low for k in ("why", "what happened", "tell me", "kyu", "kya")):
+            if _PROACTIVE_WHY_RE.search(text):
                 session.phase = Phase.DIAGNOSE
             else:
                 session.phase = Phase.CLARIFY
         else:
-            if len(low.split()) >= 6 and any(k in low for k in _DIAGNOSIS_REQUEST_SIGNALS):
+            if len(text.split()) >= 6 and is_diagnosis_request(text):
                 session.phase = Phase.CLARIFY
             else:
                 session.phase = Phase.UNDERSTAND
@@ -71,8 +103,8 @@ def advance_phase_before_turn(session: SessionState, user_text: str) -> Phase:
     if p == Phase.CLARIFY:
         if (
             session.clarify_questions_asked >= 3
-            or (session.clarify_questions_asked >= 2 and any(k in low for k in _DIAGNOSIS_REQUEST_SIGNALS))
-            or any(k in low for k in ("check my data", "show me", "tell me why", "you check", "aap check"))
+            or (session.clarify_questions_asked >= 2 and is_diagnosis_request(text))
+            or bool(_CLARIFY_DATA_NOW_RE.search(text))
         ):
             session.phase = Phase.DIAGNOSE
         return session.phase
@@ -86,7 +118,7 @@ def advance_phase_before_turn(session: SessionState, user_text: str) -> Phase:
         return session.phase
 
     if p == Phase.RECOMMEND:
-        if session.recommend_turns >= 1 or any(k in low for k in _BUY_IN_SIGNALS):
+        if session.recommend_turns >= 1 or is_buy_in(text):
             session.phase = Phase.COMMIT
         return session.phase
 
@@ -103,7 +135,7 @@ def advance_phase_before_turn(session: SessionState, user_text: str) -> Phase:
 
 
 def advance_phase_after_turn(session: SessionState) -> Phase:
-    """Track per-phase turn counters and advance if a milestone artifact was captured."""
+    """Track per-phase turn counters."""
     p = session.phase
     if p == Phase.CLARIFY:
         session.clarify_questions_asked += 1
@@ -146,7 +178,9 @@ def _phase_instruction(
     oos_curr = m["out_of_stock_skus"]["current"]
     cancel_curr = m["cancellation_rate_pct"]["current"]
     fu = headline.get("followup") or {}
-    assessed_drivers = [d for d in diag.get("drivers", []) if d.get("assessable")]
+    assessed_drivers = [
+        d for d in diag.get("drivers", []) if d.get("assessable") and d.get("driver") != "unexplained_residual"
+    ]
     top_driver = assessed_drivers[0] if assessed_drivers else None
     missing_fields = diag.get("missing_signals") or []
 
@@ -215,7 +249,8 @@ def _phase_instruction(
     if p == Phase.RECOMMEND:
         return (
             "GOAL: Share the prioritized actions from the pre-loaded action plan concisely (referencing exact target SKUs and "
-            "indicative recovery ranges, adding 'subject to eligibility' where promotions apply) and ask for buy-in."
+            "indicative recovery ranges, adding 'subject to eligibility' where promotions apply; never guarantee results or name real marketplace programs) "
+            "and ask for buy-in."
         )
 
     if p == Phase.COMMIT:
@@ -288,6 +323,7 @@ def build_system_prompt(
         "- Ask at most ONE question per turn. Use natural acknowledgments ('Got it', 'I understand').",
         "- NO markdown, NO bullet lists, NO emojis, NO headings, NO internal reasoning.",
         "- NEVER invent or calculate numbers; speak ONLY numbers present in BASELINE SNAPSHOT or VERIFIED DATA CONTEXT.",
+        "- Keep recommendations marketplace-agnostic: never claim guaranteed outcomes or real marketplace program names; qualify promos/ads with 'subject to eligibility'.",
         "- If a driver or metric is missing from the uploaded file, explicitly say it is 'not assessable with the data provided' and never guess.",
         "- If seller is angry or off-topic, empathize briefly and steer back to recovering their sales.",
         _phase_instruction(session, headline, diag),

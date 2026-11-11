@@ -38,6 +38,54 @@ def _sse(event: str, data: dict[str, Any]) -> dict[str, Any]:
     return {"event": event, "data": data}
 
 
+def slice_recent_messages(messages: list[CanonicalMessage], max_count: int = 10) -> list[CanonicalMessage]:
+    """Slice trailing conversation messages without orphaning tool-call/tool-result pairs."""
+    n = len(messages)
+    if n == 0:
+        return []
+    start = max(0, n - max_count)
+
+    # Never begin the window inside a tool-result sequence (step backward to owning assistant(tool_calls))
+    while start > 0 and messages[start].role == "tool":
+        start -= 1
+
+    # If the window still starts on role="tool" (corrupted orphan prefix without assistant tool_calls), skip forward
+    while start < n and messages[start].role == "tool":
+        start += 1
+
+    # If window starts on an assistant tool-call whose tool results aren't immediately next, skip forward
+    if start < n and messages[start].role == "assistant" and messages[start].tool_calls:
+        nxt = start + 1
+        if nxt >= n or messages[nxt].role != "tool":
+            start += 1
+            while start < n and messages[start].role == "tool":
+                start += 1
+
+    return messages[start:]
+
+
+def _localized_empty_fallback(session: SessionState) -> str:
+    salutation = session.seller_context.profile.salutation
+    lang = session.language
+    if session.commitments and session.phase == Phase.COMMIT:
+        if lang == "hi-IN":
+            return f"जी {salutation}, मैंने आपका एक्शन प्लान और समय दर्ज कर लिया है। क्या मैं समरी भेज दूँ?"
+        if lang == "hinglish":
+            return f"Ji {salutation}, maine aapki commitment aur timeline note kar li hai. Kya main call summary bhej doon?"
+        return f"Got it, {salutation}. I have noted your commitment with due dates and follow-up targets. Shall I send the summary?"
+    if session.summary_card and session.phase == Phase.SUMMARY:
+        if lang == "hi-IN":
+            return f"मैंने आपकी कॉल समरी, जरूरी एक्शन और फॉलो-अप कॉल का समय भेज दिया है।"
+        if lang == "hinglish":
+            return "Maine aapki call summary key findings aur follow-up details ke saath bhej di hai."
+        return "I have sent your call summary with key issues, action deadlines, and our follow-up check-in."
+    if lang == "hi-IN":
+        return f"जी {salutation}, कृपया अपनी पसंदीदा समय-सीमा बताइए ताकि मैं एक्शन प्लान तय कर सकूँ।"
+    if lang == "hinglish":
+        return f"Ji {salutation}, please apni preferred timeline bataiye taaki main action plan lock kar sakoon."
+    return f"Got it, {salutation}. Please tell me your preferred timeline so I can lock your action plan."
+
+
 def _compact_tool_payload(name: str, res: dict[str, Any]) -> dict[str, Any]:
     """Trim verbose fields before passing pre-executed context to the LLM to preserve TPM."""
     if name == "get_out_of_stock_skus":
@@ -211,7 +259,10 @@ class AgentOrchestrator:
             yield _sse("token", {"text": greeting})
             yield _sse(
                 "sentence",
-                {"text": greeting, "speakable": to_speakable_text(greeting, session.language)},
+                {
+                    "text": greeting,
+                    "speakable": to_speakable_text(greeting, session.language, seller_context=session.seller_context),
+                },
             )
             yield _sse("done", {"text": greeting, "phase": session.phase.value, "provider": "template"})
             return
@@ -253,8 +304,8 @@ class AgentOrchestrator:
         for ev in pre_events:
             yield ev
 
-        # Keep recent history compact (last 10 non-system messages) to protect free-tier TPM
-        recent_history = session.messages[-10:]
+        # Keep recent history compact (last ~10 non-system messages) without breaking tool sequences
+        recent_history = slice_recent_messages(session.messages, max_count=10)
         sys_prompt = build_system_prompt(session, precomputed_context=pre_ctx)
         working_messages = [CanonicalMessage(role="system", content=sys_prompt), *recent_history]
         phase_tools = tools_for_phase(session.phase)
@@ -303,7 +354,7 @@ class AgentOrchestrator:
                                 "sentence",
                                 {
                                     "text": sent,
-                                    "speakable": to_speakable_text(sent, session.language),
+                                    "speakable": to_speakable_text(sent, session.language, seller_context=session.seller_context),
                                 },
                             )
 
@@ -317,7 +368,7 @@ class AgentOrchestrator:
                     "sentence",
                     {
                         "text": rem,
-                        "speakable": to_speakable_text(rem, session.language),
+                        "speakable": to_speakable_text(rem, session.language, seller_context=session.seller_context),
                     },
                 )
 
@@ -401,19 +452,20 @@ class AgentOrchestrator:
         # Enforce voice word-count cap & clean text
         cleaned_reply = enforce_voice_length(final_text, session.phase.value, max_words=45)
         if not cleaned_reply:
-            salutation = session.seller_context.profile.salutation
-            if session.commitments and session.phase == Phase.COMMIT:
-                cleaned_reply = f"Got it, {salutation}. I have noted your commitment with due dates and follow-up targets. Shall I send the summary?"
-            elif session.summary_card and session.phase == Phase.SUMMARY:
-                cleaned_reply = "I have sent your call summary with key issues, action deadlines, and our 3-day follow-up check-in."
-            else:
-                cleaned_reply = f"Got it, {salutation}. Please tell me your preferred timeline so I can lock your action plan."
+            cleaned_reply = _localized_empty_fallback(session)
             yield _sse("token", {"text": cleaned_reply})
             yield _sse(
                 "sentence",
-                {"text": cleaned_reply, "speakable": to_speakable_text(cleaned_reply, session.language)},
+                {
+                    "text": cleaned_reply,
+                    "speakable": to_speakable_text(cleaned_reply, session.language, seller_context=session.seller_context),
+                },
             )
-        ungrounded = find_ungrounded_numbers(cleaned_reply, session.grounded_numbers)
+        ungrounded = find_ungrounded_numbers(
+            cleaned_reply,
+            session.grounded_numbers,
+            seller_context=session.seller_context,
+        )
         if ungrounded:
             session.ungrounded_warnings.append(
                 {
@@ -450,7 +502,7 @@ class AgentOrchestrator:
             "done",
             {
                 "text": cleaned_reply,
-                "speakable": to_speakable_text(cleaned_reply, session.language),
+                "speakable": to_speakable_text(cleaned_reply, session.language, seller_context=session.seller_context),
                 "phase": session.phase.value,
                 "provider": provider_used,
                 "commitments": session.commitments,

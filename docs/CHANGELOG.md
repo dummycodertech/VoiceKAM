@@ -37,3 +37,10 @@ The original assessment snapshot remains frozen on `main` at tag `v1.0-assessmen
 - Documented formulas and reconciliation guarantees in `docs/ATTRIBUTION.md` and updated `docs/ASSUMPTIONS.md`.
 - Added uncertain spoken phrasing (`"roughly"`, unexplained residual naming, and `"not assessable with the data provided"` prompts) in `app/agent/state_machine.py` and `app/llm/mock_provider.py`.
 - Added property reconciliation tests (100 random fuzz trials) and 200-trial ground-truth recovery verification in `tests/test_attribution_properties.py` (`200/200` top-driver recovery in test fixture; `40` offline tests passing).
+
+## Phase 4 — Agent Behaviour Cleanup
+- Replaced substring checks in `app/agent/state_machine.py` with precompiled word-boundary regexes (`_DIAGNOSIS_REQUEST_RE`, `_BUY_IN_RE`, `_NEGATION_RE`) so substrings like `"look"` or `"broken"` never trigger `"ok"`, same-utterance negation (`"no"`, `"not"`, `"don't"`, `"nahi"`, `"na"`) cancels buy-in, and dead `_COMMIT_SIGNALS` was removed.
+- Added `slice_recent_messages()` in `app/agent/orchestrator.py` to prevent history slicing (`session.messages[-10:]`) from starting on orphaned `role="tool"` messages or incomplete `assistant(tool_calls)` pairs.
+- Updated `app/agent/speakable.py` with `int_to_indian_hindi()` / `decimal_to_spoken_hi()` (`हज़ार`, `लाख`, `करोड़`, `रुपये`, `प्रतिशत`) for `hi-IN`, generic & `SellerContext`-parameterized SKU masking in `find_ungrounded_numbers()`, and marketplace-agnostic recommendations (`"subject to eligibility"`).
+- Added localized empty-reply fallbacks (`hi-IN`, `hinglish`, `en-IN`) in `app/agent/orchestrator.py`.
+- Added `tests/test_agent_behavior.py` verifying word-boundary matching, negation, message slicing, `hi-IN` speakable conversions, custom SKU grounding, and localized fallbacks (`47` offline tests passing).
