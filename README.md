@@ -10,7 +10,7 @@ Open-source prototype pairing a server-owned conversation state machine, sequent
 [![FastAPI >=0.115](https://img.shields.io/badge/FastAPI-%E2%89%A50.115.0-009688?logo=fastapi&logoColor=white)](requirements.txt)
 [![Pydantic v2](https://img.shields.io/badge/Pydantic-%E2%89%A52.9.0-E92063?logo=pydantic&logoColor=white)](requirements.txt)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Tests & Offline Eval](https://github.com/dummycodertech/VoiceKAM/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/dummycodertech/VoiceKAM/actions/workflows/tests.yml)
+(https://github.com/dummycodertech/VoiceKAM/actions/workflows/tests.yml)
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-Render%20Free%20Tier-46E3B7?logo=render&logoColor=white)](https://snapdeal-virtual-kam.onrender.com)
 
 [**Live Demo**](https://snapdeal-virtual-kam.onrender.com) · [**UI Gallery**](#interface-gallery) · [**Architecture**](#architecture-and-methodology) · [**Attribution Math**](docs/ATTRIBUTION.md) · [**Quick Start**](#getting-started) · [**API Contract**](docs/API_CONTRACT.md) · [**Evaluation**](docs/EVALUATION.md)
