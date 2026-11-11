@@ -1,11 +1,8 @@
-"""M5 Walking Skeleton browser verification using Playwright + installed Chrome.
-
-Headless Chrome cannot capture a real microphone or run live Web Speech API, so
-we stub SpeechRecognition via add_init_script and drive turns via the Debug Text Box.
-"""
+"""Hermetic Playwright UI walking skeleton test (runs cleanly offline with MockLLMProvider)."""
 
 from __future__ import annotations
 
+import os
 import socket
 import subprocess
 import sys
@@ -13,7 +10,6 @@ import time
 from pathlib import Path
 
 import httpx
-import pytest
 from playwright.sync_api import sync_playwright
 
 SCRATCH_DIR = Path(__file__).resolve().parent.parent / "scratch"
@@ -23,6 +19,64 @@ def _free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
+
+
+def _hermetic_env(port: int) -> dict[str, str]:
+    env = os.environ.copy()
+    env.update(
+        {
+            "ALLOW_MOCK_LLM": "true",
+            "GROQ_API_KEY": "",
+            "GEMINI_API_KEY": "",
+            "OPENROUTER_API_KEY": "",
+            "TTS_PROVIDER": "browser",
+            "TTS_CACHE_ENABLED": "false",
+            "PORT": str(port),
+        }
+    )
+    return env
+
+
+def _launch_browser(p):
+    try:
+        return p.chromium.launch(channel="chrome", headless=True)
+    except Exception:
+        return p.chromium.launch(headless=True)
+
+
+_SPEECH_STUB_SCRIPT = """
+window.SpeechRecognition = class MockSpeechRecognition {
+  constructor() {
+    this.lang = 'en-IN';
+    this.interimResults = true;
+    this.continuous = true;
+    this._started = false;
+  }
+  start() {
+    this._started = true;
+    if (this.onstart) this.onstart();
+  }
+  stop() {
+    if (this._started) {
+      this._started = false;
+      if (this.onend) this.onend();
+    }
+  }
+};
+window.webkitSpeechRecognition = window.SpeechRecognition;
+window.SpeechSynthesisUtterance = window.SpeechSynthesisUtterance || class MockUtterance {
+  constructor(text) { this.text = text; this.lang = 'en-IN'; this.rate = 1; }
+};
+window.speechSynthesis = {
+  getVoices() { return [{ lang: 'en-IN', name: 'MockVoice' }]; },
+  cancel() {},
+  speak(u) { setTimeout(() => { if (u && typeof u.onend === 'function') u.onend(); }, 50); }
+};
+HTMLMediaElement.prototype.play = function() {
+  setTimeout(() => { if (this.onended) this.onended(); }, 100);
+  return Promise.resolve();
+};
+"""
 
 
 def test_walking_skeleton_voice_ui_flow():
@@ -36,10 +90,10 @@ def test_walking_skeleton_voice_ui_flow():
         [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(port)],
         stdout=log_file,
         stderr=subprocess.STDOUT,
+        env=_hermetic_env(port),
     )
 
     try:
-        # Wait for server + startup smoke probes
         ready = False
         for _ in range(60):
             try:
@@ -52,7 +106,7 @@ def test_walking_skeleton_voice_ui_flow():
         assert ready, "Uvicorn server did not become healthy in time"
 
         with sync_playwright() as p:
-            browser = p.chromium.launch(channel="chrome", headless=True)
+            browser = _launch_browser(p)
             context = browser.new_context(viewport={"width": 1280, "height": 840})
             page = context.new_page()
 
@@ -71,48 +125,24 @@ def test_walking_skeleton_voice_ui_flow():
                 ),
             )
 
-            # Stub SpeechRecognition + Audio.play so headless Chrome tests the full JS loop cleanly
-            page.add_init_script(
-                """
-                window.SpeechRecognition = class MockSpeechRecognition {
-                  constructor() {
-                    this.lang = 'en-IN';
-                    this.interimResults = true;
-                    this.continuous = true;
-                    this._started = false;
-                  }
-                  start() {
-                    this._started = true;
-                    if (this.onstart) this.onstart();
-                  }
-                  stop() {
-                    if (this._started) {
-                      this._started = false;
-                      if (this.onend) this.onend();
-                    }
-                  }
-                };
-                window.webkitSpeechRecognition = window.SpeechRecognition;
-                HTMLMediaElement.prototype.play = function() {
-                  setTimeout(() => { if (this.onended) this.onended(); }, 150);
-                  return Promise.resolve();
-                };
-                """
-            )
-
+            page.add_init_script(_SPEECH_STUB_SCRIPT)
             page.goto(base_url, wait_until="networkidle")
+
+            # Branding & notice hydrated from /api/health
             assert "prototype" in page.inner_text("header").lower()
+            assert page.inner_text("#brandName").strip() == "VoiceKAM"
+            assert "not affiliated with any marketplace" in page.inner_text("#footerNotice").lower()
+            assert "UrbanStride Footwear & Apparel" in page.inner_text("#datasetSummary")
 
             # 1. Start Call -> greeting plays & streams
             page.click("#btnStartCall")
             page.wait_for_selector("#captionsBox .caption-line.kam", timeout=10000)
 
-            # 2. Drive turn 1 through Debug Text Box against real LLM + TTS
+            # 2. Drive turn 1 through Debug Text Box against offline MockLLMProvider
             page.click("#btnToggleDebug")
             page.fill("#txtDebugInput", "My sales dropped significantly this month. Can you help me?")
             page.click("#btnSendDebug")
 
-            # Wait for stream completion + audio trigger cleanly (no brittle fixed sleep)
             page.wait_for_function(
                 "() => Number(document.body.dataset.completedStreams || '0') >= 2 && document.getElementById('latencySttToAudio').innerText !== '-'",
                 timeout=20000,
@@ -120,7 +150,8 @@ def test_walking_skeleton_voice_ui_flow():
             page.screenshot(path=str(SCRATCH_DIR / "m5_walking_skeleton.png"), full_page=True)
 
             captions_text = page.inner_text("#captionsBox")
-            assert "Arjun ji" in captions_text
+            assert "Vikram ji" in captions_text
+            assert "metis" in captions_text.lower()
             assert "sales dropped" in captions_text.lower()
             assert page.inner_text("#latencySttToToken") != "-"
             assert page.inner_text("#latencySttToAudio") != "-"

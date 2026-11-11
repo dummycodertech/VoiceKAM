@@ -2,34 +2,55 @@ const inr=n=>"₹"+Number(n).toLocaleString("en-IN");
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const sign=(n,f=x=>x)=>`<span class="${n<0?"neg":n>0?"pos":""}">${n>0?"+":""}${f(n)}</span>`;
 const FAIL={rate_limited:"was busy",forbidden:"is unavailable",timeout:"was slow",server_error:"had an error"};
+const DRV_COLOR={
+  stock_outs:"var(--loss)",
+  pricing_gaps:"var(--gold)",
+  visibility_drop:"var(--blue)",
+  cancellations:"var(--violet)",
+  unexplained_residual:"rgba(232,230,227,.38)"
+};
 const SUM={
   run_diagnosis:r=>`Found ${r.total_lost_orders} lost orders (${inr(r.total_lost_revenue)})`,
-  get_out_of_stock_skus:r=>`${r.total_oos_count} products out of stock`,
-  get_pricing_gaps:r=>`${r.overpriced_sku_count} overpriced products`,
-  get_cancellation_breakdown:r=>`Cancellations ${r.baseline_cancellation_rate_pct}% to ${r.current_cancellation_rate_pct}%`,
-  get_visibility_funnel:()=>"Checked search visibility",
+  get_out_of_stock_skus:r=>r.assessable===false?"Stock data missing":`${r.total_oos_count??0} products out of stock`,
+  get_pricing_gaps:r=>r.assessable===false?"Competitor price data missing":`${r.overpriced_sku_count??0} overpriced products`,
+  get_cancellation_breakdown:r=>r.assessable===false?"Cancellation data missing":`Cancellations ${r.baseline_cancellation_rate_pct??"N/A"}% to ${r.current_cancellation_rate_pct??"N/A"}%`,
+  get_visibility_funnel:r=>r.assessable===false?"Visibility data missing":"Checked search visibility",
   build_action_plan:r=>`${r.actions?.length||0} actions, ${r.estimated_combined_recovery_rs||""}`,
   commit_action:r=>`Committed ${r.commitment?.action_id} due ${r.commitment?.due_date}`,
   schedule_followup:r=>`Follow-up: ${r.followup_date}`,
   send_call_summary:()=>"Wrote the call summary",
-  get_metric_comparison:r=>`Sales ${r.metrics?.sales_gmv?.delta_pct}%, price flat`,
+  get_metric_comparison:r=>`Sales ${r.metrics?.sales_gmv?.delta_pct}%, ASP ${r.metrics?.asp?.delta_pct}%`,
   get_seller_overview:()=>"Loaded the seller account"
 };
 export function createKamBrainController({rootEl,summaryEl,getBranding}){
   const b={m:null,diag:null,oos:null,price:null,plan:null,commits:[],prior:[],fu:null,tools:[],fail:null,prov:"-",bad:0,follow:false};
-  const agentName=()=>getBranding?.()?.agentName||"metis";
+  const agentName=()=>getBranding?.()?.agentName||"assistant";
   const agentEsc=()=>esc(agentName());
   const upsert=c=>{const i=b.commits.findIndex(x=>x.action_id===c.action_id);i<0?b.commits.push(c):b.commits[i]=c};
   function table(){
     const m=b.m?.metrics;if(!m)return"<p>Loading the account snapshot…</p>";
     const f=b.m.followup,hd=f?"<th>3-day pace</th>":"";
     const row=(n,a,c,d,p)=>`<tr><td>${n}</td><td>${a}</td><td>${c}</td><td>${d}</td>${f?`<td>${p}</td>`:""}</tr>`;
-    return`<div class="tbl-wrap"><table class="kb-table"><thead><tr><th>Metric</th><th>Last month</th><th>This month</th><th>Change</th>${hd}</tr></thead><tbody>`+
-      row("Sales (GMV)",inr(m.sales_gmv.baseline),inr(m.sales_gmv.current),sign(m.sales_gmv.delta_pct,x=>x+"%"),f&&inr(f.sales_gmv_pace)+` <small class="pos">+${f.sales_vs_crisis_pct}%</small>`)+
+    const oosObj=m.out_of_stock_skus||{},oosOk=oosObj.assessable!==false&&oosObj.current!=null;
+    const oosBase=oosOk?oosObj.baseline:'<span class="empty">Not assessable</span>';
+    const oosCurr=oosOk?oosObj.current:'<span class="empty">Not assessable</span>';
+    const oosDiff=oosOk?sign(-oosObj.delta,x=>-x):'<span class="empty">Missing stock column</span>';
+    const oosFu=f?(f.out_of_stock_skus!=null?`${f.out_of_stock_skus} <small>target ${f.oos_target_max} or fewer</small>`:'<span class="empty">Not assessable</span>'):"";
+
+    const cancObj=m.cancellation_rate_pct||{},cancOk=cancObj.assessable!==false&&cancObj.current!=null;
+    const cancBase=cancOk?`${cancObj.baseline}%`:'<span class="empty">Not assessable</span>';
+    const cancCurr=cancOk?`${cancObj.current}%`:'<span class="empty">Not assessable</span>';
+    const cancDiff=cancOk?sign(-cancObj.delta_pp,x=>-x+" pts"):'<span class="empty">Missing table</span>';
+    const cancFu=f?(f.cancellation_rate_pct!=null?`${f.cancellation_rate_pct}% <small>target ${f.cancellation_target_max}% or less</small>`:'<span class="empty">Not assessable</span>'):"";
+
+    const aspDelta=Math.abs(m.asp.delta_pct||0)<=3?"Flat":sign(m.asp.delta_pct,x=>x+"%");
+    const prevLbl=esc(b.m.baseline_label||"Last month"),currLbl=esc(b.m.current_label||"This month");
+    return`<div class="tbl-wrap"><table class="kb-table"><thead><tr><th>Metric</th><th>${prevLbl}</th><th>${currLbl}</th><th>Change</th>${hd}</tr></thead><tbody>`+
+      row("Sales (GMV)",inr(m.sales_gmv.baseline),inr(m.sales_gmv.current),sign(m.sales_gmv.delta_pct,x=>x+"%"),f&&inr(f.sales_gmv_pace)+` <small class="${(f.sales_vs_crisis_pct||0)>=0?"pos":"neg"}">${(f.sales_vs_crisis_pct||0)>=0?"+":""}${f.sales_vs_crisis_pct}%</small>`)+
       row("Orders placed",m.orders.baseline,m.orders.current,sign(m.orders.delta),f&&f.orders_pace)+
-      row("Average price",inr(m.asp.baseline),inr(m.asp.current),"Flat",f&&inr(f.asp))+
-      row("Out-of-stock SKUs",m.out_of_stock_skus.baseline,m.out_of_stock_skus.current,sign(-m.out_of_stock_skus.delta,x=>-x),f&&`${f.out_of_stock_skus} <small>target ${f.oos_target_max} or fewer</small>`)+
-      row("Cancellation rate",m.cancellation_rate_pct.baseline+"%",m.cancellation_rate_pct.current+"%",sign(-m.cancellation_rate_pct.delta_pp,x=>-x+" pts"),f&&`${f.cancellation_rate_pct}% <small>target ${f.cancellation_target_max}% or less</small>`)+
+      row("Average price",inr(m.asp.baseline),inr(m.asp.current),aspDelta,f&&inr(f.asp))+
+      row("Out-of-stock SKUs",oosBase,oosCurr,oosDiff,oosFu)+
+      row("Cancellation rate",cancBase,cancCurr,cancDiff,cancFu)+
       `</tbody></table></div><p style="margin-top:10px;color:var(--mute)">${esc(b.m.volume_vs_price_finding||"")}</p>`;
   }
   function prior(){
@@ -39,17 +60,30 @@ export function createKamBrainController({rootEl,summaryEl,getBranding}){
   }
   function diag(){
     if(!b.diag)return`<section class="card locked"><h2>Root-Cause Revenue Attribution</h2><p>${agentEsc()} fills this in after checking your orders, stock and prices.</p></section>`;
-    const col=["var(--loss)","var(--gold)","var(--blue)"],d=b.diag.drivers||[];
+    const d=b.diag.drivers||[],miss=b.diag.missing_signals||[];
+    const barSegs=d.filter(x=>x.share_pct>0).map((x,i)=>{
+      const c=DRV_COLOR[x.driver]||["var(--loss)","var(--gold)","var(--blue)","var(--violet)"][i]||"var(--mute)";
+      return`<i style="width:${x.share_pct}%;background:${c}" title="${esc(x.title)}: ${x.share_pct}%"></i>`;
+    }).join("");
+    const missNote=miss.length?`<p class="missing-note">Missing data signals (${miss.map(esc).join(", ")}) cannot be attributed; any gap remains marked as not assessable or stays in the unexplained residual.</p>`:"";
     return`<section class="card"><h2>Root-Cause Revenue Attribution<span class="chip ok">Live Diagnosis Verified</span></h2>
-      <div class="bar">${d.map((x,i)=>`<i style="width:${x.share_pct}%;background:${col[i]||"var(--mute)"}"></i>`).join("")}</div>
-      ${d.map((x,i)=>`<div class="drv"><span style="background:${col[i]||"var(--mute)"}"></span><b>${esc(x.title)}</b><b>${x.share_pct}% (${x.lost_orders} orders)</b><small>${esc(x.evidence)}</small></div>`).join("")}
-      <div class="big"><div class="neg">-${inr(b.diag.total_lost_revenue)}<small>sales lost a month</small></div><div class="neg">-${b.diag.total_lost_orders}<small>orders lost</small></div></div></section>`;
+      <div class="bar">${barSegs||'<i style="width:100%;background:rgba(232,230,227,.18)"></i>'}</div>
+      ${d.map((x,i)=>{
+        const c=DRV_COLOR[x.driver]||["var(--loss)","var(--gold)","var(--blue)","var(--violet)"][i]||"var(--mute)";
+        const conf=esc(x.confidence||"medium");
+        const metricTxt=x.assessable===false?"Not assessable":`${x.share_pct}% (${x.lost_orders} orders)`;
+        return`<div class="drv"><span style="background:${c}"></span><b>${esc(x.title)} <em class="badge-conf conf-${conf}">${conf}</em></b><b>${metricTxt}</b><small>${esc(x.evidence)}</small></div>`;
+      }).join("")}
+      ${missNote}
+      <div class="big"><div class="neg">-${inr(b.diag.total_lost_revenue)}<small>sales lost in period</small></div><div class="neg">-${b.diag.total_lost_orders}<small>orders lost</small></div></div></section>`;
   }
   function evidence(){
-    const o=(b.oos?.top_oos_skus||[]).slice(0,4),p=(b.price?.pricing_gaps||[]).filter(x=>!(b.price.repriced_skus||[]).some(s => s.sku_id === x.sku_id));
-    if(!o.length&&!p.length)return"";
-    return`<section class="card two"><div><h2>Out of stock, biggest losses</h2>${o.map(x=>`<div class="li"><span>${esc(x.sku_id)} ${esc(x.name)}</span><span class="neg">${inr(x.estimated_lost_rev_per_day)}/day</span></div>`).join("")||"<p>None checked yet.</p>"}</div>
-      <div><h2>Priced above competitors</h2>${p.map(x=>`<div class="li"><span>${esc(x.sku_id)} ${esc(x.name)}</span><span>${inr(x.seller_price)} vs ${inr(x.competitor_lowest_price)}</span></div>`).join("")||"<p>None checked yet.</p>"}</div></section>`;
+    const o=b.oos?.assessable===false?null:(b.oos?.top_oos_skus||[]).slice(0,4);
+    const p=b.price?.assessable===false?null:(b.price?.pricing_gaps||[]).filter(x=>!(b.price.repriced_skus||[]).some(s=>s.sku_id===x.sku_id));
+    if(o===null&&p===null)return"";
+    if(!o?.length&&!p?.length&&b.oos?.assessable!==false&&b.price?.assessable!==false)return"";
+    return`<section class="card two"><div><h2>Out of stock, biggest losses</h2>${o===null?"<p class=\"empty\">Not assessable without stock columns.</p>":(o.map(x=>`<div class="li"><span>${esc(x.sku_id)} ${esc(x.name)}</span><span class="neg">${inr(x.estimated_lost_rev_per_day)}/day</span></div>`).join("")||"<p class=\"empty\">No out-of-stock losses identified.</p>")}</div>
+      <div><h2>Priced above competitors</h2>${p===null?"<p class=\"empty\">Not assessable without competitor_lowest_price.</p>":(p.slice(0,5).map(x=>`<div class="li"><span>${esc(x.sku_id)} ${esc(x.name)}</span><span>${inr(x.seller_price)} vs ${inr(x.competitor_lowest_price)}</span></div>`).join("")||"<p class=\"empty\">No overpriced active SKUs flagged.</p>")}</div></section>`;
   }
   function plan(){
     if(!b.plan)return`<section class="card locked"><h2>Prioritised Recovery Plan</h2><p>${agentEsc()} proposes actions once the diagnosis is done, then asks you to commit.</p></section>`;
@@ -80,7 +114,8 @@ export function createKamBrainController({rootEl,summaryEl,getBranding}){
   }
   render();
   return{
-    onDemoData(d){b.m=d.metrics;b.follow=d.metrics?.snapshot==="followup";render()},
+    refresh:render,
+    onDemoData(d){Object.assign(b,{diag:null,oos:null,price:null,plan:null,commits:[],prior:[],fu:null,tools:[],fail:null,bad:0});b.m=d.metrics;b.follow=d.metrics?.snapshot==="followup";render()},
     onSessionStarted(p){Object.assign(b,{diag:null,oos:null,price:null,plan:null,commits:[],fu:null,tools:[],fail:null,bad:0});
       b.m=p.demo_data?.metrics||b.m;b.prior=p.session?.prior_commitments||[];b.follow=p.session?.mode==="followup";render()},
     onPhase(){},

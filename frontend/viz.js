@@ -10,6 +10,7 @@ export function createVoiceViz({canvas,getState,getTts}){
   const env=Float32Array.from({length:BARS},(_,i)=>Math.exp(-Math.pow((i/(BARS-1)*2-1)/.58,2)));   // centre-peaked silhouette
   const ph=Float32Array.from({length:BARS},()=>Math.random()*6.28);
   let W=0,H=0,bufT=null,bufM=null,micAn=null,micCtx=null,micStream=null,micBusy=false,micFail=false,wantMic=false;
+  let rafId=null;
 
   // >>> MIC ANALYSER (read-only, never routed to speakers) -------------------
   async function startMic(){
@@ -39,8 +40,8 @@ export function createVoiceViz({canvas,getState,getTts}){
         an.getByteFrequencyData(bufT);
         for(let i=0;i<BARS;i++)tg[i]=Math.min(1,Math.pow(bin(bufT,i),1.2)*1.9*(.3+.7*env[i]))+.03*env[i];
       }else{    // browser voice cannot be analysed: speech-like simulated envelope
-        const s=.5+.5*Math.sin(t*6.1)*Math.sin(t*2.3+1);
-        for(let i=0;i<BARS;i++)tg[i]=(.3+.5*Math.abs(Math.sin(t*9+ph[i])))*(.35+.65*s)*Math.pow(env[i],.9);
+        const s=.5+.5*Math.sin(tt*6.1)*Math.sin(tt*2.3+1);
+        for(let i=0;i<BARS;i++)tg[i]=(.3+.5*Math.abs(Math.sin(tt*9+ph[i])))*(.35+.65*s)*Math.pow(env[i],.9);
       }
     }else if(st==="listening"){
       if(micAn){
@@ -51,13 +52,14 @@ export function createVoiceViz({canvas,getState,getTts}){
     }else if(st==="thinking"){
       for(let i=0;i<BARS;i++)tg[i]=(.14+.14*Math.sin(tt*4.2-i*.28))*(.4+.6*env[i])+.03;
     }else{
-      for(let i=0;i<BARS;i++)tg[i]=(.045+.03*Math.sin(tt*1.1+i*.22))*(.5+.5*env[i]);
+      for(let i=0;i<BARS;i++)tg[i]=.055*(.45+.55*env[i]);
     }
     if(st==="speaking"||st==="listening"){for(let i=1;i<BARS-1;i++)sm[i]=(tg[i-1]+2*tg[i]+tg[i+1])/4;for(let i=1;i<BARS-1;i++)tg[i]=sm[i]}   // neighbour smoothing fills the silhouette
   }
 
   // >>> DRAW -----------------------------------------------------------------
   function draw(st){
+    if(!W||!H)return;
     g.clearRect(0,0,W,H);
     const cy=Math.round(H*.6),mh=H*.5,bw=W/BARS;
     g.globalAlpha=st==="idle"?.6:1;g.globalCompositeOperation="lighter";
@@ -75,21 +77,32 @@ export function createVoiceViz({canvas,getState,getTts}){
     g.fillStyle=base;g.fillRect(0,cy,W,1);g.globalAlpha=1;g.globalCompositeOperation="source-over";
   }
 
-  // >>> LOOP + RESIZE --------------------------------------------------------
-  function size(){
-    const dpr=Math.min(devicePixelRatio||1,2);W=canvas.clientWidth;H=canvas.clientHeight;
-    canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);g.setTransform(dpr,0,0,dpr,0,0);
-  }
-  new ResizeObserver(size).observe(canvas);size();
+  // >>> LOOP + RESIZE (pauses cleanly when idle or hidden) -------------------
   const t0=performance.now();
-  (function frame(now){
-    requestAnimationFrame(frame);
-    if(!W||!H)return;
+  function step(now){
+    rafId=null;
     const st=getState?.()||"idle";
     if(USE_MIC&&st==="listening"){wantMic=true;if(!micAn&&!micBusy&&!micFail)startMic()}
     targets(st,(now-t0)/1000);
-    for(let i=0;i<BARS;i++)lv[i]+=(tg[i]-lv[i])*(tg[i]>lv[i]?.5:.11);   // fast attack, slow release
+    let maxDiff=0;
+    for(let i=0;i<BARS;i++){
+      if(reduce)lv[i]=tg[i];
+      else{const d=tg[i]-lv[i];lv[i]+=d*(d>0?.5:.11);if(Math.abs(d)>maxDiff)maxDiff=Math.abs(d)}
+    }
     draw(st);
-  })(t0);
-  return{stopMic};
+    const settled=st==="idle"&&maxDiff<.002;
+    if(!document.hidden&&!reduce&&!settled)rafId=requestAnimationFrame(step);
+  }
+  function schedule(){
+    if(rafId===null&&!document.hidden)rafId=requestAnimationFrame(step);
+  }
+  function size(){
+    const dpr=Math.min(devicePixelRatio||1,2);W=canvas.clientWidth;H=canvas.clientHeight;
+    canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);g.setTransform(dpr,0,0,dpr,0,0);
+    draw(getState?.()||"idle");
+  }
+  new ResizeObserver(size).observe(canvas);size();
+  document.addEventListener("visibilitychange",()=>{if(!document.hidden)schedule()});
+  schedule();
+  return{stopMic,onStateChange:schedule};
 }

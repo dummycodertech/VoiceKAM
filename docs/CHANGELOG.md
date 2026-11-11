@@ -44,3 +44,11 @@ The original assessment snapshot remains frozen on `main` at tag `v1.0-assessmen
 - Updated `app/agent/speakable.py` with `int_to_indian_hindi()` / `decimal_to_spoken_hi()` (`हज़ार`, `लाख`, `करोड़`, `रुपये`, `प्रतिशत`) for `hi-IN`, generic & `SellerContext`-parameterized SKU masking in `find_ungrounded_numbers()`, and marketplace-agnostic recommendations (`"subject to eligibility"`).
 - Added localized empty-reply fallbacks (`hi-IN`, `hinglish`, `en-IN`) in `app/agent/orchestrator.py`.
 - Added `tests/test_agent_behavior.py` verifying word-boundary matching, negation, message slicing, `hi-IN` speakable conversions, custom SKU grounding, and localized fallbacks (`47` offline tests passing).
+
+## Phase 5 — Frontend Upgrades
+- Hydrated project name, agent name, privacy notice, footer notice, and seller labels dynamically from `/api/health`, `/api/scenarios`, and `/api/demo-data` in `frontend/index.html`, `frontend/app.js`, `frontend/audio.js`, and `frontend/kam_brain.js` (no hardcoded brand/agent literals in HTML/JS).
+- Added the **Store Dataset** panel in `frontend/index.html` and `frontend/app.js` with Demo Scenario switcher (A–D), "Use my own data" mode, template download links (`/api/data/template?format=csv|json|cancellations_csv`), visible `PRIVACY_NOTICE`, inline validation error display (`#uploadError`), and pre-call `#datasetSummary` card.
+- Updated `frontend/kam_brain.js` to handle missing optional columns (`Not assessable` without `null%`), 5-driver bar colors including `unexplained_residual`, confidence badges (`high | medium | low | unavailable`), and friendly API error parsing (including HTTP 429 messages).
+- Fixed WebAudio lifecycle & animation efficiency: `frontend/audio.js` reuses `this.ctx` in `playRingtone()`, and `frontend/viz.js` pauses `requestAnimationFrame` when idle or hidden.
+- Pruned unused CSS selectors, upgraded contrast tokens (`--dim`, `--mute`, `.btn.primary`) for WCAG AA readability, and verified 390px responsive layout with zero horizontal overflow in `frontend/styles.css`.
+- Updated `tests/test_walking_skeleton_ui.py` and `tests/test_full_ui.py` to run hermetically (`ALLOW_MOCK_LLM=true`, `TTS_PROVIDER=browser`) covering Scenario A–D switching, broken/minimal CSV uploads, and 390px layout (`49` passing including UI & debranding suites).
