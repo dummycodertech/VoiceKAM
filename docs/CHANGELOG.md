@@ -63,3 +63,11 @@ The original assessment snapshot remains frozen on `main` at tag `v1.0-assessmen
 - Added `LICENSE` (MIT with `[Your Name]` placeholder), `CONTRIBUTING.md`, `SECURITY.md`, `docs/PRIVACY.md`, and `.github/workflows/tests.yml` (deterministic, hermetic Playwright UI, and offline eval checks).
 - Added `tests/test_security_and_limits.py` covering rate limits, daily cap, CORS, headers, payload cap, TTL/LRU eviction, and `/api/health` scrubbing (`53` offline tests passing).
 - Removed tracked legacy archive `files.zip` and untracked `newfrontend.zip`, ignored `*.zip` in `.gitignore`, and confirmed zero real credentials leaked across both working tree and full `git log -p --all` history (only local untracked `.env` holds runtime keys).
+
+## Phase 8 — Documentation
+- Rewrote `README.md` with VoiceKAM (`metis`) overview, Mermaid architecture diagram, local/Docker/Render quick-start commands, complete environment configuration table, Scenarios A–D comparison table, grounded baseline metrics copied from `docs/EVALUATION.md`, privacy note link, and synthetic prototype notice.
+- Added `docs/ARCHITECTURE.md` (server-owned state machine, pre-execution, numeric grounding audit, multi-provider LLM failover, speakable TTS/STT flow, and ephemeral store limits).
+- Added `docs/DECISIONS.md` (numbered ADRs covering branding config, phase/tool gating, counterfactual disjoint attribution, RAM-only single-worker persistence, numeric grounding & word-boundary intent rules, public quota limits, and 3-tier TTS fallback).
+- Added `docs/RELATED_WORK.md` situating VoiceKAM alongside `ReAct` (`arXiv:2210.03629`), `Toolformer` (`arXiv:2302.04761`), `FActScore` (`arXiv:2305.14251`), and the W3C `Web Speech API` specification.
+- Added `docs/DEMO_SCRIPT.md` (90-second walkthrough on Scenario A *UrbanStride Footwear & Apparel*, custom CSV template upload, and 3-day follow-up review) and `docs/PROJECT_SUMMARY.md` using verified metrics and explicit placeholders for unmeasured live voice metrics.
+- Verified `tests/test_debranding.py` passes (`0` legacy strings across docs and code).
