@@ -14,13 +14,96 @@ from app.utils.formatting import format_indian_number, format_inr, normalize_ind
 
 ROOT = Path(__file__).resolve().parent.parent
 
+_FALLBACK_BRIEF_SKUS_CSV = """sku_id,name,category,price,orders_prev,orders_curr,competitor_lowest_price,days_out_of_stock_prev,days_out_of_stock_curr,stock_qty_curr,impressions_prev,impressions_curr,clicks_prev,clicks_curr
+HK-001,Steel Lunch Box 3-Tier,Cookware,760,0,0,772,30,30,0,20,20,0,0
+HK-002,Glass Water Bottle 1L,Storage,500,0,0,510,30,30,0,20,20,0,0
+HK-003,Wooden Rolling Pin,Tableware,510,0,0,526,30,30,0,20,20,0,0
+HK-004,Plastic Kitchen Organizer,Appliances,400,0,0,414,30,30,0,20,20,0,0
+HK-005,Cast Iron Skillet 10in,Kitchen Tools,240,0,0,248,30,30,0,20,20,0,0
+HK-006,Stainless Steel Pressure Cooker 5L,Cookware,230,24,6,232,0,22,0,4800,3600,192,144
+HK-007,Non-Stick Granite Tawa 28cm,Storage,470,20,4,488,0,20,0,4000,3000,160,120
+HK-008,Insulated Steel Casserole Set,Tableware,840,18,5,849,0,19,0,3600,2700,144,108
+HK-009,Airtight Kitchen Storage Jars,Appliances,570,16,5,573,0,18,0,3200,2400,128,96
+HK-010,Tadka Pan 14cm,Kitchen Tools,470,14,4,468,0,16,0,2800,2100,112,84
+HK-011,Steel Idli Maker 4-Plate,Cookware,620,5,3,630,0,10,0,1000,750,40,30
+HK-012,Copper Water Jug,Storage,660,4,2,659,0,9,0,800,600,32,24
+HK-013,Bamboo Chopping Board,Tableware,380,4,3,381,0,9,0,800,600,32,24
+HK-014,Silicone Baking Mat,Appliances,460,3,2,469,0,8,0,600,450,24,18
+HK-015,Masala Dabba Steel 7-Cup,Kitchen Tools,450,3,2,463,0,8,0,600,450,24,18
+HK-016,Ceramic Coffee Mug Set 4Pc,Cookware,770,2,1,791,0,7,0,400,300,16,12
+HK-017,Melamine Serving Tray Pair,Storage,240,2,1,239,0,6,0,400,300,16,12
+HK-018,Glass Bowl Set 6Pc,Tableware,250,1,0,248,0,6,0,200,150,8,6
+HK-019,Electric Kettle 1.5L,Appliances,700,30,22,655,0,0,77,6000,6000,240,240
+HK-020,3-Tier Modular Dish Rack,Kitchen Tools,500,28,20,465,0,0,27,5600,5600,224,224
+HK-021,Silicone Non-Stick Spatula Set,Cookware,300,24,14,277,0,0,111,4800,4800,192,192
+HK-022,Vegetable Chopper 12-in-1,Storage,710,8,5,736,0,0,91,1600,1000,64,40
+HK-023,Steel Ladle Set,Tableware,590,8,5,593,0,0,92,1600,1000,64,40
+HK-024,Hand Blender 300W,Appliances,160,7,4,160,0,0,127,1400,800,56,32
+HK-025,Tea Strainer Set,Kitchen Tools,760,7,4,773,0,0,45,1400,800,56,32
+HK-026,Oil Dispenser 500ml,Cookware,470,6,4,479,0,0,112,1200,800,48,32
+HK-027,Pasta Maker Manual,Storage,440,6,4,448,0,0,72,1200,800,48,32
+HK-028,Grater 4-Side,Tableware,580,6,4,581,0,0,40,1200,800,48,32
+HK-029,Egg Boiler Electric,Appliances,440,6,4,448,0,0,31,1200,800,48,32
+HK-030,Rice Cooker 1.8L,Kitchen Tools,820,6,4,845,0,0,83,1200,800,48,32
+HK-031,Mixing Bowl Set 5Pc,Cookware,330,5,3,334,0,0,84,1000,600,40,24
+HK-032,Peeler Swivel Pack of 3,Storage,270,5,4,280,0,0,62,1000,800,40,32
+HK-033,Measuring Cups Set,Tableware,650,5,4,669,0,0,115,1000,800,40,32
+HK-034,Kitchen Scale Digital,Appliances,530,3,3,545,0,0,99,600,600,24,24
+HK-035,Chapati Box Insulated,Kitchen Tools,190,5,5,192,0,0,35,1000,1000,40,40
+HK-036,Steel Thali Set 6Pc,Cookware,820,5,5,833,0,0,133,1000,1000,40,40
+HK-037,Cutlery Set 24Pc,Storage,250,5,5,253,0,0,130,1000,1000,40,40
+HK-038,Water Dispenser Pump,Tableware,360,5,5,363,0,0,125,1000,1000,40,40
+HK-039,Fridge Bottle Set 6Pc,Appliances,730,5,5,733,0,0,71,1000,1000,40,40
+HK-040,Microfiber Cloth Pack of 6,Kitchen Tools,340,5,5,339,0,0,91,1000,1000,40,40
+HK-041,Dustbin Pedal 10L,Cookware,480,5,5,477,0,0,88,1000,1000,40,40
+HK-042,Spice Rack Rotating,Storage,840,5,5,853,0,0,146,1000,1000,40,40
+HK-043,Steel Glass Set 6Pc,Tableware,210,5,5,211,0,0,70,1000,1000,40,40
+HK-044,Milk Pan 1.5L,Appliances,370,5,5,374,0,0,91,1000,1000,40,40
+HK-045,Kadhai Iron 12in,Kitchen Tools,160,5,5,164,0,0,102,1000,1000,40,40
+HK-046,Frying Pan Non-Stick 24cm,Cookware,720,5,5,748,0,0,128,1000,1000,40,40
+HK-047,Stainless Steel Strainer,Storage,340,5,5,338,0,0,24,1000,1000,40,40
+HK-048,Plastic Container Set 10Pc,Tableware,590,5,5,594,0,0,94,1000,1000,40,40
+HK-049,Lunch Bag Insulated,Appliances,680,5,5,679,0,0,59,1000,1000,40,40
+HK-050,Ice Cube Tray 2-Pack,Kitchen Tools,230,5,5,236,0,0,99,1000,1000,40,40
+HK-051,Wooden Cooking Spoon Set 5Pc,Cookware,252,5,5,256,0,0,83,1000,1000,40,40
+HK-052,Cake Tin Round,Storage,710,5,5,703,0,0,78,1000,1000,40,40
+HK-053,Pizza Cutter Wheel,Tableware,740,5,5,752,0,0,26,1000,1000,40,40
+HK-054,Can Opener Heavy Duty,Appliances,600,5,5,599,0,0,42,1000,1000,40,40
+HK-055,Garlic Press Steel,Kitchen Tools,160,5,5,162,0,0,33,1000,1000,40,40
+HK-056,Kitchen Towel Holder,Cookware,610,5,5,630,0,0,129,1000,1000,40,40
+HK-057,Sink Organizer Caddy,Storage,350,4,4,360,0,0,76,800,800,32,32
+HK-058,Silicone Oven Mitt Pair,Tableware,480,4,4,491,0,0,51,800,800,32,32
+HK-059,Salad Spinner 3L,Appliances,370,3,3,375,0,0,58,600,600,24,24
+HK-060,Pickle Jar Glass 1L,Kitchen Tools,760,3,3,790,0,0,106,600,600,24,24
+"""
+
+_FALLBACK_BRIEF_CANCELS_CSV = """reason,count_prev,count_curr
+seller_stock_unavailable,6,14
+dispatch_sla_breach,5,9
+buyer_initiated,15,11
+courier_address_issue,6,4
+"""
+
+
+def _brief_csv_paths() -> tuple[Path, Path]:
+    sku_p = ROOT / "brief_scenario_skus.csv"
+    can_p = ROOT / "brief_scenario_cancellations.csv"
+    if sku_p.exists() and can_p.exists():
+        return sku_p, can_p
+    scratch = ROOT / "scratch"
+    scratch.mkdir(parents=True, exist_ok=True)
+    fb_sku = scratch / "brief_fallback_skus.csv"
+    fb_can = scratch / "brief_fallback_cancellations.csv"
+    fb_sku.write_text(_FALLBACK_BRIEF_SKUS_CSV, encoding="utf-8")
+    fb_can.write_text(_FALLBACK_BRIEF_CANCELS_CSV, encoding="utf-8")
+    return fb_sku, fb_can
+
 
 def _load_brief_context():
-    skus = (ROOT / "brief_scenario_skus.csv").read_bytes()
-    cancels = (ROOT / "brief_scenario_cancellations.csv").read_bytes()
+    sku_p, can_p = _brief_csv_paths()
     return parse_uploaded_csv(
-        skus,
-        cancellations_csv_bytes=cancels,
+        sku_p.read_bytes(),
+        cancellations_csv_bytes=can_p.read_bytes(),
         seller_meta={
             "shop_name": "HomeCraft Essentials",
             "seller_name": "Ananya",
@@ -289,9 +372,10 @@ def test_group4_spoken_register_ranges_codes_eligibility_and_cadence():
     assert "दशमलव शून्य" not in out_hi and "पचास प्रतिशत" in out_hi
 
     # 2. Never say "Seller Partner" or "Custom Uploaded Store" in speech; cap product names at 2
+    sku_p, can_p = _brief_csv_paths()
     default_ctx = parse_uploaded_csv(
-        (ROOT / "brief_scenario_skus.csv").read_bytes(),
-        cancellations_csv_bytes=(ROOT / "brief_scenario_cancellations.csv").read_bytes(),
+        sku_p.read_bytes(),
+        cancellations_csv_bytes=can_p.read_bytes(),
     )
     store = SessionStore()
     s = store.create(mode="inbound", language="en-IN", seller_context=default_ctx)
@@ -537,9 +621,10 @@ def test_group5_frontend_reprompt_timing_and_upload_names_in_greeting():
             page.goto(base_url, wait_until="networkidle")
 
             # 1. Fill custom upload fields & CSV -> custom shop + seller names must appear in the call greeting
+            sku_path, can_path = _brief_csv_paths()
             page.click("#btnDataModeUpload")
-            page.set_input_files("#fileSkuDataset", str(ROOT / "brief_scenario_skus.csv"))
-            page.set_input_files("#fileCancelDataset", str(ROOT / "brief_scenario_cancellations.csv"))
+            page.set_input_files("#fileSkuDataset", str(sku_path))
+            page.set_input_files("#fileCancelDataset", str(can_path))
             page.fill("#txtUploadShop", "Loom and Craft Studio")
             page.fill("#txtUploadSeller", "Meera Joshi")
             page.click("#btnValidateUpload")
