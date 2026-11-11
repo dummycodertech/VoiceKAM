@@ -204,7 +204,7 @@ def test_full_ui_scenarios_upload_and_call_flow():
             assert "3-day pace" in fu_brain.lower()
             assert "3,94,336" in fu_brain
 
-            _send_debug(page, "Hi metis, yes I restocked most items. How do my numbers look now?")
+            _send_debug(page, "Hi Metis, yes I restocked most items. How do my numbers look now?")
             page.click("#btnEndCall")
 
             assert console_errors == [], f"Console errors during normal call flow: {console_errors}"

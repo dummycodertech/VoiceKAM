@@ -1,4 +1,4 @@
-# VoiceKAM ("metis") — Backend API & SSE Contract (`v1`)
+# VoiceKAM ("Metis") — Backend API & SSE Contract (`v1`)
 
 - **Contract Version:** `v1` (post-handoff stabilized baseline)
 - **Runtime Requirement:** Single-worker FastAPI + Uvicorn (`--workers 1`) due to in-memory `SessionStore`, `LLMRouter` cooldown/disablement tables, and `TTSService` LRU cache.

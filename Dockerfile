@@ -1,7 +1,7 @@
 FROM python:3.12-slim
 
 LABEL org.opencontainers.image.title="voicekam" \
-      org.opencontainers.image.description="VoiceKAM (metis) standalone voice-first AI Key Account Manager"
+      org.opencontainers.image.description="VoiceKAM (Metis) standalone voice-first AI Key Account Manager"
 
 WORKDIR /app
 

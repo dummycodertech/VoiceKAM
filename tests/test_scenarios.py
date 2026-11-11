@@ -155,7 +155,7 @@ async def test_proactive_and_followup_languages_and_carryover():
         "proactive",
         "hinglish",
         [
-            "Haan metis, batao kya hua mere store mein?",
+            "Haan Metis, batao kya hua mere store mein?",
             "Achha, ab mujhe kya karna chahiye?",
             "Theek hai, let's lock dates.",
             "Haan, I commit to restocking within 48 hours starting tomorrow.",
@@ -188,7 +188,7 @@ async def test_proactive_and_followup_languages_and_carryover():
     orch = AgentOrchestrator(LLMRouter(providers=[MockLLMProvider()]))
     start_evs = [ev async for ev in orch.start_call(fu)]
     assert any(ev["event"] == "done" for ev in start_evs)
-    turn1 = [ev async for ev in orch.run_turn(fu, "Haan metis, progress batao.")]
+    turn1 = [ev async for ev in orch.run_turn(fu, "Haan Metis, progress batao.")]
     assert fu.phase == Phase.REVIEW_COMMITMENTS
     assert any(ev["event"] == "tool_result" and ev["data"]["name"] == "run_diagnosis" for ev in turn1)
     assert fu.ungrounded_warnings == []

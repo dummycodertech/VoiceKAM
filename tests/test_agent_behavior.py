@@ -283,21 +283,21 @@ def test_spoken_agent_name_config_per_language_without_changing_ui_text(monkeypa
     get_settings.cache_clear()
     try:
         cfg = get_settings()
-        assert cfg.agent_name == AGENT_NAME == "metis"
+        assert cfg.agent_name == AGENT_NAME == "Metis"
         assert cfg.spoken_agent_name("en-IN") == "meh-tiss"
         assert cfg.spoken_agent_name("hinglish") == "meh-tiss"
         assert cfg.spoken_agent_name("hi-IN") == "मेटिस"
 
-        spoken_en = to_speakable_text("Namaste, I am metis, checking symmetrical SKUs.", language="en-IN", settings=cfg)
+        spoken_en = to_speakable_text("Namaste, I am Metis, checking symmetrical SKUs.", language="en-IN", settings=cfg)
         assert "meh-tiss" in spoken_en
         assert "metis" not in spoken_en.lower()
         assert "symmetrical" in spoken_en
 
-        spoken_hinglish = to_speakable_text("Ji, main metis bol rahi hoon.", language="hinglish", settings=cfg)
+        spoken_hinglish = to_speakable_text("Ji, main Metis bol rahi hoon.", language="hinglish", settings=cfg)
         assert "meh-tiss" in spoken_hinglish
         assert "metis" not in spoken_hinglish.lower()
 
-        spoken_hi = to_speakable_text("नमस्ते, मैं metis हूँ।", language="hi-IN", settings=cfg)
+        spoken_hi = to_speakable_text("नमस्ते, मैं Metis हूँ।", language="hi-IN", settings=cfg)
         assert "मेटिस" in spoken_hi
         assert "metis" not in spoken_hi.lower()
 
@@ -326,7 +326,7 @@ async def test_orchestrator_greeting_preserves_ui_name_and_uses_spoken_tts_name(
     evs_en = [ev async for ev in orch.start_call(s_en)]
     sent_en = next(e["data"] for e in evs_en if e["event"] == "sentence")
     done_en = next(e["data"] for e in evs_en if e["event"] == "done")
-    assert "metis" in sent_en["text"] and "metis" in done_en["text"]
+    assert "Metis" in sent_en["text"] and "Metis" in done_en["text"]
     assert "meh-tiss" not in sent_en["text"]
     assert "meh-tiss" in sent_en["speakable"] and "meh-tiss" in done_en["speakable"]
 
@@ -334,5 +334,5 @@ async def test_orchestrator_greeting_preserves_ui_name_and_uses_spoken_tts_name(
     evs_hi = [ev async for ev in orch.start_call(s_hi)]
     sent_hi = next(e["data"] for e in evs_hi if e["event"] == "sentence")
     done_hi = next(e["data"] for e in evs_hi if e["event"] == "done")
-    assert "metis" in sent_hi["text"] and "metis" in done_hi["text"]
+    assert "Metis" in sent_hi["text"] and "Metis" in done_hi["text"]
     assert "मेटिस" in sent_hi["speakable"] and "मेटिस" in done_hi["speakable"]

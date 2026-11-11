@@ -24,7 +24,7 @@ const SUM={
 };
 export function createKamBrainController({rootEl,summaryEl,getBranding}){
   const b={m:null,diag:null,oos:null,price:null,plan:null,commits:[],prior:[],fu:null,tools:[],fail:null,prov:"-",bad:0,follow:false};
-  const agentName=()=>getBranding?.()?.agentName||"assistant";
+  const agentName=()=>getBranding?.()?.agentName||"Metis";
   const agentEsc=()=>esc(agentName());
   const upsert=c=>{const i=b.commits.findIndex(x=>x.action_id===c.action_id);i<0?b.commits.push(c):b.commits[i]=c};
   function table(){

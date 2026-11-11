@@ -60,7 +60,7 @@ def main() -> int:
             print(f"  edge-tts probe error: {probe.get('error_type')}: {probe.get('error')}")
 
         print(f"[3/5] Checking {base}/api/tts ...")
-        rt = client.post(f"{base}/api/tts", json={"text": "Namaste, I am metis, checking your sales data.", "language": "en-IN"})
+        rt = client.post(f"{base}/api/tts", json={"text": "Namaste, I am Metis, checking your sales data.", "language": "en-IN"})
         rt.raise_for_status()
         ct = rt.headers.get("content-type", "")
         print(f"  TTS Content-Type={ct} | X-TTS-Provider={rt.headers.get('x-tts-provider', 'json-fallback')} | size={len(rt.content)} bytes")

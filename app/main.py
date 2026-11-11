@@ -318,7 +318,6 @@ def create_app(
                 "cache_enabled": settings.tts_cache_enabled,
             },
             "features": {
-                "enable_gemini_live": settings.enable_gemini_live,
                 "whisper_stt_fallback": bool(settings.groq_api_key.strip()),
                 "max_upload_skus": settings.max_upload_skus,
                 "max_upload_bytes": settings.max_upload_bytes,

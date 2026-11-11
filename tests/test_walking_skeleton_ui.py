@@ -153,7 +153,7 @@ def test_walking_skeleton_voice_ui_flow():
 
             captions_text = page.inner_text("#captionsBox")
             assert "Vikram ji" in captions_text
-            assert "metis" in captions_text.lower()
+            assert "Metis" in captions_text
             assert "sales dropped" in captions_text.lower()
             assert page.inner_text("#latencySttToToken") != "-"
             assert page.inner_text("#latencySttToAudio") != "-"

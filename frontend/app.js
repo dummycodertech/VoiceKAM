@@ -5,7 +5,7 @@ const S={
   inCall:false,sessionId:null,mode:"inbound",language:"en-IN",headphones:false,tts:"auto",
   orb:"idle",t0:0,timer:null,rec:null,recognizing:false,eou:null,silence:null,reprompted:false,
   interim:"",final:"",sttEnd:0,abort:null,done:0,hook:null,viz:null,
-  projectName:"Virtual KAM",agentName:"assistant",sellerSalutation:"seller partner",
+  projectName:"VoiceKAM",agentName:"Metis",sellerSalutation:"seller partner",
   dataSource:"demo",scenarioId:"A",datasetId:null,scenarios:[]
 };
 const el={};

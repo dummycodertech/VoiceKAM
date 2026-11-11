@@ -9,12 +9,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # Central Branding Constants (change here to rename across backend, API & UI)
 # ---------------------------------------------------------------------------
 PROJECT_NAME = "VoiceKAM"
-AGENT_NAME = "metis"
-AGENT_NAME_DEVANAGARI = "metis"
+AGENT_NAME = "Metis"
+AGENT_NAME_DEVANAGARI = "Metis"
 # Spoken TTS pronunciation overrides per language (display UI keeps AGENT_NAME / AGENT_NAME_DEVANAGARI)
 AGENT_NAME_SPOKEN_EN = AGENT_NAME
 AGENT_NAME_SPOKEN_HI = AGENT_NAME_DEVANAGARI
-FOOTER_NOTICE = "VoiceKAM Seller Intelligence. Not affiliated with any marketplace."
+FOOTER_NOTICE = "VoiceKAM open-source prototype. Not affiliated with any marketplace."
 PRIVACY_NOTICE = (
     "Do not upload real or confidential seller data; "
     "free LLM tiers may use prompts to improve their products."
@@ -63,9 +63,7 @@ class Settings(BaseSettings):
     tts_cache_enabled: bool = True
 
     # Server & Runtime
-    port: int = 7860
     llm_timeout_seconds: float = 12.0
-    enable_gemini_live: bool = False
     allow_mock_llm: bool = False
 
     # Upload & Session Constraints

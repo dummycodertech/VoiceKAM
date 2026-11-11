@@ -23,7 +23,7 @@ class SellerProfile:
     is_custom_upload: bool = False
     period_prev_label: str = "Last Month"
     period_curr_label: str = "This Month"
-    prototype_notice: str = "VoiceKAM Seller Intelligence. Not affiliated with any marketplace."
+    prototype_notice: str = "VoiceKAM open-source prototype. Not affiliated with any marketplace."
 
     def to_dict(self, sku_count: int = 0) -> dict[str, Any]:
         return {

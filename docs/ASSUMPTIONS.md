@@ -1,6 +1,6 @@
 # Data, Business Logic & Technical Assumptions
 
-> All figures, store records, SKUs, and conversation scenarios in this project are **100% synthetic data** created solely for demonstrating the **VoiceKAM ("metis")** architecture. No real marketplace seller data, internal APIs, pricing feeds, or trademark assets are used.
+> All figures, store records, SKUs, and conversation scenarios in this project are **100% synthetic data** created solely for demonstrating the **VoiceKAM ("Metis")** architecture. No real marketplace seller data, internal APIs, pricing feeds, or trademark assets are used.
 
 ---
 

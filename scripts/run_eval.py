@@ -564,6 +564,12 @@ def _render_eval_section(
         f"- **N (trials per persona x scenario cell):** {n}",
         f"- **Calls Succeeded / Attempted:** {succ_calls} / {total_calls} ({len(failed)} failed)",
         f"- **Total Assistant Turns:** {total_turns}",
+        (
+            "- **Measurement Environment:** Local Windows development machine over consumer broadband "
+            "(hosted Render free tier latency: `not measured`)"
+            if mode == "live"
+            else "- **Measurement Environment:** In-process offline mock on local Windows development machine (`first_audio_ms` and LLM-judged score: `not measured`; hosted cloud latency: `not measured`)"
+        ),
         f"- **Execution / Cache Note:** {note}",
         "",
         f"### Aggregate Measured Metrics ({tag})",
@@ -576,9 +582,9 @@ def _render_eval_section(
         f"| Phase completion rate | {comp_val} | {comp_det} |",
         f"| Words per turn (avg / max) | {words_val} | Voice word budget (`45` default, `55` DIAGNOSE/RECOMMEND, `82` SUMMARY) |",
         f"| Commitments captured | {commit_val} | {calls_with_commits}/{total_calls} calls captured >=1 commitment |",
-        f"| LLM first-token latency (p50 / p95) | {ft_p50} / {ft_p95} | SSE `latency.llm_first_token_ms` ({len(ft_vals)} turns measured) |",
-        f"| First-audio latency (p50 / p95) | {fa_p50} / {fa_p95} | Turn start -> first `sentence` + `edge-tts` MP3 ready ({len(fa_vals)} turns measured) |",
-        f"| Cross-model LLM-as-judge score (1-5) | {judge_summary} | Distinct judge model (`relevance, empathy, clarity, actionability, honesty_uncertainty`) |",
+        f"| LLM first-token latency (p50 / p95) | {ft_p50} / {ft_p95} | SSE `latency.llm_first_token_ms` ({len(ft_vals)} turns measured on local machine; hosted latency `not measured`) |",
+        f"| First-audio latency (p50 / p95) | {fa_p50} / {fa_p95} | Turn start -> first `sentence` + `edge-tts` MP3 ready ({len(fa_vals)} turns measured on local machine; hosted latency `not measured`) |",
+        f"| Cross-model score (LLM-judged, 1-5) | {judge_summary} | LLM-judged by distinct model (`relevance, empathy, clarity, actionability, honesty_uncertainty`) |",
         "",
         f"### Breakdown by Scenario ({tag})",
         "",

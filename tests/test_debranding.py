@@ -96,10 +96,10 @@ def test_repo_contains_no_legacy_brand_or_persona_strings():
 def test_central_branding_config_single_source_of_truth():
     s = Settings()
     assert s.project_name == PROJECT_NAME == "VoiceKAM"
-    assert s.agent_name == AGENT_NAME == "metis"
-    assert s.agent_name_devanagari == AGENT_NAME_DEVANAGARI == "metis"
-    assert s.agent_name_spoken_en == AGENT_NAME_SPOKEN_EN == "metis"
-    assert s.agent_name_spoken_hi == AGENT_NAME_SPOKEN_HI == "metis"
+    assert s.agent_name == AGENT_NAME == "Metis"
+    assert s.agent_name_devanagari == AGENT_NAME_DEVANAGARI == "Metis"
+    assert s.agent_name_spoken_en == AGENT_NAME_SPOKEN_EN == "Metis"
+    assert s.agent_name_spoken_hi == AGENT_NAME_SPOKEN_HI == "Metis"
     assert s.footer_notice == FOOTER_NOTICE
     branding = s.branding_dict()
     assert branding["project_name"] == s.project_name

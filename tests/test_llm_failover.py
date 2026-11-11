@@ -178,9 +178,9 @@ def test_canonical_to_gemini_adds_trigger_content_for_system_only_greetings():
     from app.llm.gemini_provider import _canonical_to_gemini
 
     sys_inst, contents = _canonical_to_gemini(
-        [CanonicalMessage(role="system", content="You are metis calling proactively.")]
+        [CanonicalMessage(role="system", content="You are Metis calling proactively.")]
     )
-    assert sys_inst == "You are metis calling proactively."
+    assert sys_inst == "You are Metis calling proactively."
     assert len(contents) == 1
     assert contents[0].role == "user"
 

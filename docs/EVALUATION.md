@@ -13,6 +13,7 @@
 - **N (trials per persona x scenario cell):** 2
 - **Calls Succeeded / Attempted:** 45 / 48 (3 failed)
 - **Total Assistant Turns:** 292
+- **Measurement Environment:** Local Windows development machine over consumer broadband (hosted Render free tier latency: `not measured`)
 - **Execution / Cache Note:** Live API router + exponential backoff + disk cache (1/48 call cache hits)
 
 ### Aggregate Measured Metrics (Live)
@@ -25,9 +26,9 @@
 | Phase completion rate | 93.8% | 45/48 attempted calls reached SUMMARY/CLOSE with card (45/48 completed without API failure) |
 | Words per turn (avg / max) | 32.3 / 56 | Voice word budget (`45` default, `55` DIAGNOSE/RECOMMEND, `82` SUMMARY) |
 | Commitments captured | 93.8% (45 total) | 45/48 calls captured >=1 commitment |
-| LLM first-token latency (p50 / p95) | 2004.0 ms / 5840.0 ms | SSE `latency.llm_first_token_ms` (292 turns measured) |
-| First-audio latency (p50 / p95) | 3969.0 ms / 7966.0 ms | Turn start -> first `sentence` + `edge-tts` MP3 ready (284 turns measured) |
-| Cross-model LLM-as-judge score (1-5) | 4.6 / 5.0 (rel 4.72, emp 4.24, clr 4.69, act 4.74, unc 4.6; n=43/48) | Distinct judge model (`relevance, empathy, clarity, actionability, honesty_uncertainty`) |
+| LLM first-token latency (p50 / p95) | 2004.0 ms / 5840.0 ms | SSE `latency.llm_first_token_ms` (292 turns measured on local machine; hosted latency `not measured`) |
+| First-audio latency (p50 / p95) | 3969.0 ms / 7966.0 ms | Turn start -> first `sentence` + `edge-tts` MP3 ready (284 turns measured on local machine; hosted latency `not measured`) |
+| Cross-model score (LLM-judged, 1-5) | 4.6 / 5.0 (rel 4.72, emp 4.24, clr 4.69, act 4.74, unc 4.6; n=43/48) | LLM-judged by distinct model (`relevance, empathy, clarity, actionability, honesty_uncertainty`) |
 
 ### Breakdown by Scenario (Live)
 
@@ -63,6 +64,7 @@
 - **N (trials per persona x scenario cell):** 1
 - **Calls Succeeded / Attempted:** 24 / 24 (0 failed)
 - **Total Assistant Turns:** 156
+- **Measurement Environment:** In-process offline mock on local Windows development machine (`first_audio_ms` and LLM-judged score: `not measured`; hosted cloud latency: `not measured`)
 - **Execution / Cache Note:** Offline mode (`MockLLMProvider`); disk cache & audio TTS disabled (`not measured`)
 
 ### Aggregate Measured Metrics (Offline Mock)
@@ -75,9 +77,9 @@
 | Phase completion rate | 100.0% | 24/24 attempted calls reached SUMMARY/CLOSE with card (24/24 completed without API failure) |
 | Words per turn (avg / max) | 23.5 / 34 | Voice word budget (`45` default, `55` DIAGNOSE/RECOMMEND, `82` SUMMARY) |
 | Commitments captured | 100.0% (24 total) | 24/24 calls captured >=1 commitment |
-| LLM first-token latency (p50 / p95) | 1.0 ms / 3.0 ms | SSE `latency.llm_first_token_ms` (156 turns measured) |
+| LLM first-token latency (p50 / p95) | 1.0 ms / 3.0 ms | SSE `latency.llm_first_token_ms` (156 turns measured on local machine; hosted latency `not measured`) |
 | First-audio latency (p50 / p95) | not measured / not measured | Turn start -> first `sentence` + `edge-tts` MP3 ready (0 turns measured) |
-| Cross-model LLM-as-judge score (1-5) | not measured | Distinct judge model (`relevance, empathy, clarity, actionability, honesty_uncertainty`) |
+| Cross-model score (LLM-judged, 1-5) | not measured | LLM-judged by distinct model (`relevance, empathy, clarity, actionability, honesty_uncertainty`) |
 
 ### Breakdown by Scenario (Offline Mock)
 

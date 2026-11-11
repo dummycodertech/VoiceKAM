@@ -1,8 +1,14 @@
-# VoiceKAM (`metis`) — Voice-First AI Key Account Manager
+# VoiceKAM (`Metis`) — Voice-First AI Key Account Manager
 
-> **VoiceKAM Seller Intelligence SaaS. Not affiliated with any marketplace.**
+> **VoiceKAM open-source prototype. Not affiliated with any marketplace.**
 
-**VoiceKAM** is a brand-neutral, open-source voice-first AI Key Account Manager (`metis`) for e-commerce seller retention and root-cause revenue diagnostics. Combining a deterministic server-controlled phase state machine, a counterfactual disjoint attribution engine (`stock_outs`, `pricing_gaps`, `visibility_drop`, `cancellations`, and explicit `unexplained_residual`), strict numeric grounding checks, multi-provider free-tier LLM failover, and natural Indian English / Hinglish / Hindi voice I/O, VoiceKAM runs interactive live voice calls on built-in synthetic scenarios or user-uploaded SKU CSV/JSON datasets without external paid dependencies.
+- **Live Demo:** [Live Demo URL placeholder — replace after deploying to Render or running `.\run.ps1` / `./run.sh`](https://example.com/voicekam-live-demo-placeholder)
+
+| UI Screenshot (Placeholder) | Demo Walkthrough GIF (Placeholder) |
+| :---: | :---: |
+| *Screenshot placeholder — capture desktop call + KAM Brain view and save as `docs/media/screenshot.png` (`![VoiceKAM UI Screenshot](docs/media/screenshot.png)`).* | *Demo GIF placeholder — record a 60–90s voice diagnostic call + barge-in walkthrough and save as `docs/media/demo.gif` (`![VoiceKAM Demo GIF](docs/media/demo.gif)`).* |
+
+**VoiceKAM** is a brand-neutral, open-source prototype voice-first AI Key Account Manager (`Metis`) for e-commerce seller retention and root-cause revenue diagnostics. Combining a deterministic server-controlled phase state machine, a counterfactual disjoint attribution engine (`stock_outs`, `pricing_gaps`, `visibility_drop`, `cancellations`, and explicit `unexplained_residual`), strict numeric grounding checks, multi-provider free-tier LLM failover, and natural Indian English / Hinglish / Hindi voice I/O, VoiceKAM runs interactive live voice calls on built-in synthetic scenarios or user-uploaded SKU CSV/JSON datasets without external paid dependencies.
 
 ---
 
@@ -86,10 +92,10 @@ All settings load via `app/config.py` (`Settings` / `.env`):
 | Variable | Default | Purpose |
 | :--- | :--- | :--- |
 | `PROJECT_NAME` | `VoiceKAM` | Project title returned by `/api/health` and hydrated across UI |
-| `AGENT_NAME` | `metis` | Persona name used in prompts, greetings, warmups, and UI |
-| `AGENT_NAME_DEVANAGARI` | `metis` | Agent spelling rendered in `hi-IN` prompts and greetings |
-| `AGENT_NAME_SPOKEN_EN` | `metis` | Optional TTS-only pronunciation for `en-IN`/`hinglish` without changing UI text |
-| `AGENT_NAME_SPOKEN_HI` | `metis` | Optional TTS-only pronunciation for `hi-IN` without changing UI text |
+| `AGENT_NAME` | `Metis` | Persona name used in prompts, greetings, warmups, and UI |
+| `AGENT_NAME_DEVANAGARI` | `Metis` | Agent spelling rendered in `hi-IN` prompts and greetings |
+| `AGENT_NAME_SPOKEN_EN` | `Metis` | Optional TTS-only pronunciation for `en-IN`/`hinglish` without changing UI text |
+| `AGENT_NAME_SPOKEN_HI` | `Metis` | Optional TTS-only pronunciation for `hi-IN` without changing UI text |
 | `GROQ_API_KEY` | `""` | Primary free-tier Groq key (LLM + optional `/api/stt` Whisper) |
 | `GROQ_MODELS` | `openai/gpt-oss-20b,openai/gpt-oss-120b,qwen/qwen3.6-27b,qwen/qwen3.8-27b` | Ordered Groq model chain filtered live via `/models` |
 | `GROQ_REASONING_EFFORT` | `low` | Reasoning effort parameter passed to Groq reasoning models |
@@ -102,9 +108,8 @@ All settings load via `app/config.py` (`Settings` / `.env`):
 | `TTS_PROVIDER` | `auto` | Voice output chain (`auto`, `edge-tts`, `browser`) |
 | `TTS_VOICE_EN` / `TTS_VOICE_HI` | `en-IN-NeerjaNeural` / `hi-IN-SwaraNeural` | Microsoft Edge neural voices for `en-IN`/`hinglish` and `hi-IN` |
 | `TTS_CACHE_ENABLED` | `true` | Enables RAM LRU audio cache (up to 200 entries) |
-| `PORT` / `LLM_TIMEOUT_SECONDS` | `7860` / `12.0` | HTTP listen port and per-provider streaming timeout |
+| `PORT` (launch scripts) / `LLM_TIMEOUT_SECONDS` | `7860` / `12.0` | Uvicorn listen port (read by `run.ps1`, `run.sh`, Docker, Render) and per-provider streaming timeout (`app/config.py`) |
 | `ALLOW_MOCK_LLM` | `false` | Enables deterministic in-process `MockLLMProvider` for offline CI |
-| `ENABLE_GEMINI_LIVE` | `false` | Reserved experimental flag (off by default) |
 | `MAX_UPLOAD_SKUS` / `MAX_UPLOAD_BYTES` | `2000` / `1048576` | Custom CSV/JSON row count and upload size caps (1 MB) |
 | `MAX_REQUEST_BYTES` | `2097152` | Global HTTP request body cap (`Content-Length` > 2 MB -> HTTP 413) |
 | `SESSION_TTL_SECONDS` / `MAX_SESSIONS` | `7200` / `200` | In-memory session and upload TTL (2h) + LRU capacity |
@@ -134,25 +139,25 @@ Want to test your own dataset? Download CSV/JSON templates directly from the UI 
 
 Metrics below are taken directly from [docs/EVALUATION.md](docs/EVALUATION.md), with **Live** and **Offline Mock** runs kept strictly separate.
 
-### Live Evaluation (`Live`: `48` Attempted / `45` Succeeded Calls, `N = 2`)
+### Live Evaluation (`Live`: `48` Attempted / `45` Succeeded Calls, `N = 2` — `v1 audit`)
 
-Measured across `6` scripted seller personas × `4` seeded scenarios × `2` runs using `LLMRouter` failover (`groq:openai/gpt-oss-20b`, `groq:openai/gpt-oss-120b`, `gemini:gemini-3.5-flash-lite`, `gemini:gemini-3.6-flash`), real `edge-tts` MP3 synthesis timing, and cross-model LLM-as-judge (`3` calls failed on a multi-turn Gemini tool-slice edge case):
+Measured on a **local Windows development machine over consumer broadband** (calling Groq/Gemini and Microsoft `edge-tts` APIs directly; **hosted cloud latency on Render free tier is `not measured`**) across `6` scripted seller personas × `4` seeded scenarios × `2` runs using `LLMRouter` failover (`groq:openai/gpt-oss-20b`, `groq:openai/gpt-oss-120b`, `gemini:gemini-3.5-flash-lite`, `gemini:gemini-3.6-flash`), real `edge-tts` MP3 synthesis timing, and cross-model **LLM-judged** scoring (`3` calls failed on a multi-turn Gemini tool-slice edge case before Round 4.1):
 
 | Metric (Live) | Measured Value | Detail |
 | :--- | :--- | :--- |
-| Grounding rate (turns) | `100.0%` | `292/292` completed turns with `0` ungrounded numbers |
-| Grounding rate (number tokens) | `100.0%` | `604/604` spoken numeric tokens traced to tools |
+| Grounding rate (turns) | `100.0%` | `292/292` completed turns with `0` ungrounded numbers (`v1 audit`) |
+| Grounding rate (number tokens) | `100.0%` | `604/604` spoken numeric tokens traced to tools (`v1 audit`) |
 | Expected tool-call accuracy | `100.0%` | `360/360` expected phase tools executed |
 | Phase completion rate | `93.8%` | `45/48` attempted calls reached `SUMMARY`/`CLOSE` with summary card |
 | Words per turn (avg / max) | `32.3` / `56` | Voice budget (`45` default, `55` `DIAGNOSE`/`RECOMMEND`, `82` `SUMMARY`) |
 | Commitments captured | `93.8%` (`45` total) | `45/48` calls captured `>=1` commitment |
-| LLM first-token latency (p50 / p95) | `2004.0 ms` / `5840.0 ms` | End-to-end across `292` live turns (includes rate-limit failover hops) |
-| First-audio latency (p50 / p95) | `3969.0 ms` / `7966.0 ms` | Turn start -> first `sentence` + `edge-tts` MP3 ready (`284` turns measured) |
-| Cross-model LLM-as-judge (1–5) | `4.6 / 5.0` | `n=43/48` (`rel 4.72`, `emp 4.24`, `clr 4.69`, `act 4.74`, `unc 4.6`) |
+| LLM first-token latency (p50 / p95) | `2004.0 ms` / `5840.0 ms` | Local machine over consumer broadband (`292` turns; hosted latency `not measured`) |
+| First-audio latency (p50 / p95) | `3969.0 ms` / `7966.0 ms` | Local machine -> first `sentence` + `edge-tts` MP3 ready (`284` turns; hosted `not measured`) |
+| Cross-model score (**LLM-judged**, 1–5) | `4.6 / 5.0` | **LLM-judged**, `n=43/48` (`rel 4.72`, `emp 4.24`, `clr 4.69`, `act 4.74`, `unc 4.6`) |
 
 ### Offline Mock Baseline (`Offline Mock`: `24/24` Calls, `N = 1`)
 
-Run hermetically via `MockLLMProvider` (`156` assistant turns): **`100.0%`** turn & token grounding (`348/348`), **`100.0%`** tool accuracy (`192/192`), **`100.0%`** completion (`24/24`), **`23.5` / `34`** avg/max words, and `1.0 ms` / `3.0 ms` in-process first-token timing (`first_audio_ms` and judge score reported as `not measured`).
+Run hermetically in-process on the local development machine via `MockLLMProvider` (`156` assistant turns): **`100.0%`** turn & token grounding (`348/348`), **`100.0%`** tool accuracy (`192/192`), **`100.0%`** completion (`24/24`), **`23.5` / `34`** avg/max words, and `1.0 ms` / `3.0 ms` local in-process first-token timing (`first_audio_ms`, **LLM-judged** score, and hosted latency all reported as `not measured`).
 
 ### Synthetic Causal-Recovery Check
 

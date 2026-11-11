@@ -1,7 +1,7 @@
 [project]
 name = "voicekam"
 version = "0.2.0"
-description = "Voice-first AI Key Account Manager SaaS for marketplace seller diagnostics"
+description = "Voice-first AI Key Account Manager open-source prototype for marketplace seller diagnostics"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
