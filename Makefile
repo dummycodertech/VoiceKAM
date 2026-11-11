@@ -3,6 +3,7 @@
 PORT ?= 7860
 PYTHON ?= python
 EVAL_N ?= 1
+EVAL_LIVE_N ?= 2
 
 run:
 	$(PYTHON) -m uvicorn app.main:app --host 127.0.0.1 --port $(PORT) --workers 1
@@ -17,7 +18,7 @@ eval:
 	$(PYTHON) scripts/run_eval.py --offline --n $(EVAL_N)
 
 eval-live:
-	$(PYTHON) scripts/run_eval.py --live --n 1 --max-calls 8
+	$(PYTHON) scripts/run_eval.py --live --n $(EVAL_LIVE_N)
 
 smoke:
 	$(PYTHON) scripts/smoke_test.py

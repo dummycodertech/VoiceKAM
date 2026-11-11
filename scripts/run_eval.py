@@ -2,10 +2,12 @@
 
 Supports deterministic offline evaluation (--offline, using MockLLMProvider for
 hermetic CI) and throttled live LLM evaluation (--live, with .eval_cache/ disk
-caching, exponential backoff, and optional cross-model LLM-as-judge).
+caching, exponential backoff, real TTS first-audio latency timing, and strict
+cross-model LLM-as-judge).
 
-Never invents or estimates numbers: any unmeasured metric is recorded literally
-as "not measured".
+Never invents or estimates numbers: any failed or unmeasured metric is recorded
+literally as "not measured". Offline Mock tables and Live tables are strictly
+labeled and separated in docs/EVALUATION.md.
 """
 
 from __future__ import annotations
@@ -17,10 +19,11 @@ import hashlib
 import json
 import math
 import os
+import random
 import re
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -35,16 +38,21 @@ from app.agent.speakable import find_ungrounded_numbers
 from app.config import PROJECT_NAME, Settings
 from app.data.scenarios import SCENARIO_SPECS
 from app.data.seed_data import get_scenario_context
-
-SCENARIO_IDS: tuple[str, ...] = tuple(SCENARIO_SPECS.keys())
-from app.llm.base import CanonicalMessage, ProviderRateLimitOrTransientError
+from app.llm.base import AllProvidersUnavailableError, CanonicalMessage, ProviderRateLimitOrTransientError
 from app.llm.mock_provider import MockLLMProvider
 from app.llm.router import LLMRouter
+from app.tts.service import TTSService
 
+SCENARIO_IDS: tuple[str, ...] = tuple(SCENARIO_SPECS.keys())
 EVAL_CACHE_DIR = REPO_ROOT / ".eval_cache"
 DEFAULT_OUTPUT_PATH = REPO_ROOT / "docs" / "EVALUATION.md"
 
 _NUMBER_TOKEN_RE = re.compile(r"\b\d[\d,]*(?:\.\d+)?\b")
+
+_OFFLINE_BEGIN = "<!-- BEGIN_OFFLINE_EVAL -->"
+_OFFLINE_END = "<!-- END_OFFLINE_EVAL -->"
+_LIVE_BEGIN = "<!-- BEGIN_LIVE_EVAL -->"
+_LIVE_END = "<!-- END_LIVE_EVAL -->"
 
 EXPECTED_PHASE_TOOLS: dict[str, set[str]] = {
     "DIAGNOSE": {
@@ -158,6 +166,7 @@ class TrialMetrics:
     scenario_id: str
     persona_id: str
     trial_idx: int
+    succeeded: bool
     reached_summary_or_close: bool
     commitments_count: int
     total_turns: int
@@ -169,10 +178,11 @@ class TrialMetrics:
     word_counts: list[int] = field(default_factory=list)
     first_token_ms: list[int] = field(default_factory=list)
     first_audio_ms: list[int] = field(default_factory=list)
-    provider_models: set[str] = field(default_factory=set)
+    provider_models: list[str] = field(default_factory=list)
     judge_scores: dict[str, float] | None = None
     judge_model: str | None = None
     transcript_lines: list[str] = field(default_factory=list)
+    error: str | None = None
 
 
 def _percentile(sorted_vals: list[int | float], pct: float) -> float | None:
@@ -194,230 +204,340 @@ def _load_cache(cache_path: Path) -> dict[str, Any]:
 
 def _save_cache(cache_path: Path, data: dict[str, Any]) -> None:
     cache_path.parent.mkdir(parents=True, exist_ok=True)
-    cache_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    payload = json.dumps(data, indent=2, ensure_ascii=False).replace("\r\n", "\n")
+    cache_path.write_bytes(payload.encode("utf-8"))
 
 
 async def _run_single_trial(
     orchestrator: AgentOrchestrator,
     store: SessionStore,
+    tts_service: TTSService | None,
     scenario_id: str,
     persona: ScriptedPersona,
     trial_idx: int,
-) -> TrialMetrics:
+    *,
+    measure_audio: bool,
+    live_mode: bool,
+    call_cache: dict[str, Any],
+    cache_path: Path,
+) -> tuple[TrialMetrics, bool]:
+    """Run one full multi-turn call with disk caching and exponential backoff on rate limits."""
+    cache_key = hashlib.sha256(
+        json.dumps(
+            {
+                "v": 2,
+                "mode": "live" if live_mode else "offline",
+                "scenario": scenario_id,
+                "persona": persona.persona_id,
+                "language": persona.language,
+                "trial": trial_idx,
+                "utterances": list(persona.utterances),
+            },
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
+
+    if live_mode and cache_key in call_cache:
+        cached_raw = dict(call_cache[cache_key])
+        if cached_raw.get("succeeded"):
+            return TrialMetrics(**cached_raw), True
+
     ctx = get_scenario_context(scenario_id)
-    session = store.create(
-        mode="inbound",
-        language=persona.language,  # type: ignore[arg-type]
-        seller_context=ctx,
-    )
+    max_attempts = 4 if live_mode else 1
+    last_err: str | None = None
 
-    greeting_text = ""
-    async for ev in orchestrator.start_call(session):
-        if ev["event"] == "done":
-            greeting_text = ev["data"].get("text") or ""
+    for attempt in range(max_attempts):
+        if attempt > 0:
+            backoff = min(35.0, (2 ** (attempt + 1)) + random.uniform(0.3, 1.5))
+            await asyncio.sleep(backoff)
 
-    transcript: list[str] = [f"Agent (GREETING): {greeting_text}"]
-    tools_by_phase: dict[str, set[str]] = {}
-    visited_phases: set[str] = {session.phase.value}
+        session = store.create(
+            mode="inbound",
+            language=persona.language,  # type: ignore[arg-type]
+            seller_context=ctx,
+        )
 
-    total_turns = 0
-    grounded_turns = 0
-    total_num_tokens = 0
-    grounded_num_tokens = 0
-    word_counts: list[int] = []
-    first_token_ms: list[int] = []
-    provider_models: set[str] = set()
+        try:
+            greeting_text = ""
+            async for ev in orchestrator.start_call(session):
+                if ev["event"] == "done":
+                    greeting_text = ev["data"].get("text") or ""
 
-    for utt in persona.utterances:
-        transcript.append(f"Seller ({persona.persona_id}): {utt}")
-        active_phase = session.phase.value
-        turn_reply = ""
-        turn_ungrounded: list[str] = []
+            transcript: list[str] = [f"Agent (GREETING): {greeting_text}"]
+            tools_by_phase: dict[str, set[str]] = {}
+            visited_phases: set[str] = {session.phase.value}
 
-        # Wrap live calls cleanly with small retry/backoff on transient errors
-        events: list[dict[str, Any]] = []
-        async for ev in orchestrator.run_turn(session, utt):
-            events.append(ev)
-            if ev["event"] == "phase":
-                active_phase = ev["data"].get("phase") or active_phase
-                visited_phases.add(active_phase)
-            elif ev["event"] == "tool_result":
-                tname = ev["data"].get("name")
-                if tname:
-                    tools_by_phase.setdefault(active_phase, set()).add(tname)
-            elif ev["event"] == "latency":
-                lat = ev["data"]
-                if lat.get("llm_first_token_ms") is not None:
-                    first_token_ms.append(int(lat["llm_first_token_ms"]))
-                if lat.get("provider"):
-                    provider_models.add(str(lat["provider"]))
-                turn_ungrounded = list(lat.get("ungrounded_numbers") or [])
-            elif ev["event"] == "done":
-                turn_reply = ev["data"].get("text") or ""
-                if ev["data"].get("phase"):
-                    visited_phases.add(ev["data"]["phase"])
+            total_turns = 0
+            grounded_turns = 0
+            total_num_tokens = 0
+            grounded_num_tokens = 0
+            word_counts: list[int] = []
+            first_token_ms: list[int] = []
+            first_audio_ms: list[int] = []
+            provider_models: set[str] = set()
 
-        total_turns += 1
-        words = len(turn_reply.split())
-        word_counts.append(words)
+            for utt in persona.utterances:
+                transcript.append(f"Seller ({persona.persona_id}): {utt}")
+                active_phase = session.phase.value
+                turn_reply = ""
+                turn_ungrounded: list[str] = []
+                first_speakable: str | None = None
+                first_sentence_elapsed_ms: int | None = None
+                turn_start = time.perf_counter()
 
-        if not turn_ungrounded:
-            # Double check directly against grounded_numbers to verify consistency
-            check_ungrounded = find_ungrounded_numbers(
-                turn_reply,
-                session.grounded_numbers,
-                seller_context=session.seller_context,
+                async for ev in orchestrator.run_turn(session, utt):
+                    if ev["event"] == "phase":
+                        active_phase = ev["data"].get("phase") or active_phase
+                        visited_phases.add(active_phase)
+                    elif ev["event"] == "tool_result":
+                        tname = ev["data"].get("name")
+                        if tname:
+                            tools_by_phase.setdefault(active_phase, set()).add(tname)
+                    elif ev["event"] == "sentence":
+                        if first_speakable is None:
+                            sp = (ev["data"].get("speakable") or ev["data"].get("text") or "").strip()
+                            if sp:
+                                first_speakable = sp
+                                first_sentence_elapsed_ms = round((time.perf_counter() - turn_start) * 1000)
+                    elif ev["event"] == "error":
+                        raise RuntimeError(ev["data"].get("message") or "SSE error emitted")
+                    elif ev["event"] == "latency":
+                        lat = ev["data"]
+                        if lat.get("llm_first_token_ms") is not None:
+                            first_token_ms.append(int(lat["llm_first_token_ms"]))
+                        if lat.get("provider"):
+                            provider_models.add(str(lat["provider"]))
+                        turn_ungrounded = list(lat.get("ungrounded_numbers") or [])
+                    elif ev["event"] == "done":
+                        turn_reply = ev["data"].get("text") or ""
+                        if ev["data"].get("phase"):
+                            visited_phases.add(ev["data"]["phase"])
+
+                if measure_audio and tts_service is not None and first_speakable and first_sentence_elapsed_ms is not None:
+                    t_tts0 = time.perf_counter()
+                    try:
+                        audio, _meta = await tts_service.synthesize(first_speakable, language=persona.language)
+                        if audio is not None and len(audio.audio_bytes) > 0:
+                            tts_ms = round((time.perf_counter() - t_tts0) * 1000)
+                            first_audio_ms.append(first_sentence_elapsed_ms + tts_ms)
+                    except Exception:
+                        pass
+
+                total_turns += 1
+                words = len(turn_reply.split())
+                word_counts.append(words)
+
+                if not turn_ungrounded:
+                    turn_ungrounded = find_ungrounded_numbers(
+                        turn_reply,
+                        session.grounded_numbers,
+                        seller_context=session.seller_context,
+                    )
+                if not turn_ungrounded:
+                    grounded_turns += 1
+
+                nums_in_reply = _NUMBER_TOKEN_RE.findall(turn_reply)
+                total_num_tokens += len(nums_in_reply)
+                grounded_num_tokens += max(0, len(nums_in_reply) - len(turn_ungrounded))
+                transcript.append(f"Agent ({active_phase}): {turn_reply}")
+
+            matched_tools = 0
+            expected_tools = 0
+            for phase_name, req_tools in EXPECTED_PHASE_TOOLS.items():
+                if phase_name in visited_phases or phase_name in tools_by_phase:
+                    expected_tools += len(req_tools)
+                    called = tools_by_phase.get(phase_name, set())
+                    matched_tools += len(req_tools & called)
+
+            reached_end = bool(
+                session.summary_card is not None
+                and (Phase.SUMMARY.value in visited_phases or Phase.CLOSE.value in visited_phases)
             )
-            turn_ungrounded = check_ungrounded
+            models_sorted = sorted(provider_models or ({"mock:deterministic-test-kam"} if not live_mode else set()))
 
-        if not turn_ungrounded:
-            grounded_turns += 1
+            tm = TrialMetrics(
+                scenario_id=scenario_id,
+                persona_id=persona.persona_id,
+                trial_idx=trial_idx,
+                succeeded=True,
+                reached_summary_or_close=reached_end,
+                commitments_count=len(session.commitments),
+                total_turns=total_turns,
+                grounded_turns=grounded_turns,
+                total_number_tokens=total_num_tokens,
+                grounded_number_tokens=grounded_num_tokens,
+                expected_tools_matched=matched_tools,
+                expected_tools_total=expected_tools,
+                word_counts=word_counts,
+                first_token_ms=first_token_ms,
+                first_audio_ms=first_audio_ms,
+                provider_models=models_sorted,
+                transcript_lines=transcript,
+            )
+            if live_mode:
+                call_cache[cache_key] = asdict(tm)
+                _save_cache(cache_path, call_cache)
+            return tm, False
 
-        nums_in_reply = _NUMBER_TOKEN_RE.findall(turn_reply)
-        total_num_tokens += len(nums_in_reply)
-        grounded_num_tokens += max(0, len(nums_in_reply) - len(turn_ungrounded))
-        transcript.append(f"Agent ({active_phase}): {turn_reply}")
+        except (AllProvidersUnavailableError, ProviderRateLimitOrTransientError, Exception) as exc:
+            last_err = f"{type(exc).__name__}: {str(exc)[:180]}"
 
-    # Evaluate tool-call accuracy across expected milestone phases reached
-    matched_tools = 0
-    expected_tools = 0
-    for phase_name, req_tools in EXPECTED_PHASE_TOOLS.items():
-        if phase_name in visited_phases or phase_name in tools_by_phase:
-            expected_tools += len(req_tools)
-            called = tools_by_phase.get(phase_name, set())
-            matched_tools += len(req_tools & called)
-
-    reached_end = bool(
-        session.summary_card is not None
-        and (Phase.SUMMARY.value in visited_phases or Phase.CLOSE.value in visited_phases)
-    )
-
-    return TrialMetrics(
-        scenario_id=scenario_id,
-        persona_id=persona.persona_id,
-        trial_idx=trial_idx,
-        reached_summary_or_close=reached_end,
-        commitments_count=len(session.commitments),
-        total_turns=total_turns,
-        grounded_turns=grounded_turns,
-        total_number_tokens=total_num_tokens,
-        grounded_number_tokens=grounded_num_tokens,
-        expected_tools_matched=matched_tools,
-        expected_tools_total=expected_tools,
-        word_counts=word_counts,
-        first_token_ms=first_token_ms,
-        first_audio_ms=[],  # TTS audio not streamed in headless eval unless explicit audio mode added
-        provider_models=provider_models or {"mock:deterministic-test-kam"},
-        transcript_lines=transcript,
+    return (
+        TrialMetrics(
+            scenario_id=scenario_id,
+            persona_id=persona.persona_id,
+            trial_idx=trial_idx,
+            succeeded=False,
+            reached_summary_or_close=False,
+            commitments_count=0,
+            total_turns=0,
+            grounded_turns=0,
+            total_number_tokens=0,
+            grounded_number_tokens=0,
+            expected_tools_matched=0,
+            expected_tools_total=0,
+            error=last_err or "Unknown live evaluation error",
+        ),
+        False,
     )
 
 
 async def _judge_transcript_live(
     router: LLMRouter,
-    responder_providers: set[str],
+    responder_providers: list[str],
     transcript: list[str],
-    cache: dict[str, Any],
-    cache_path: Path,
+    judge_cache: dict[str, Any],
+    judge_cache_path: Path,
 ) -> tuple[dict[str, float] | None, str | None]:
-    """Run a rubric LLM-as-judge call using a distinct provider where available."""
-    resp_prefixes = {r.split(":", 1)[0] for r in responder_providers}
-    candidates = [
+    """Run rubric LLM-as-judge strictly using a different model than the responder(s)."""
+    resp_set = set(responder_providers)
+    resp_models = {r.split(":", 1)[1] if ":" in r else r for r in resp_set}
+    resp_prefixes = {r.split(":", 1)[0] for r in resp_set if ":" in r}
+
+    # First preference: entirely different provider family & active (not disabled)
+    cross_family = [
         p
         for p in router.configured_providers()
-        if p.provider_name not in {"mock"} and p.provider_name not in resp_prefixes
+        if p.provider_name != "mock"
+        and not router.is_disabled(p.key)
+        and p.provider_name not in resp_prefixes
     ]
-    if not candidates:
-        candidates = [
-            p
-            for p in router.configured_providers()
-            if p.provider_name != "mock" and p.key not in responder_providers
-        ]
-    if not candidates:
+    # Second preference: different model within another tier if needed (never same model as responder)
+    diff_model = [
+        p
+        for p in router.configured_providers()
+        if p.provider_name != "mock"
+        and not router.is_disabled(p.key)
+        and p.key not in resp_set
+        and p.model_name not in resp_models
+    ]
+    ordered_judges = cross_family + [c for c in diff_model if c not in cross_family]
+    if not ordered_judges:
         return None, None
 
-    judge = candidates[0]
     prompt = (
-        "Score this voice Key Account Manager call transcript from 1 to 5 on five criteria:\n"
+        "Score this voice Key Account Manager call transcript from 1 to 5 (floats or ints) on five criteria:\n"
         "1. relevance\n2. empathy\n3. clarity\n4. actionability\n5. honesty_uncertainty\n"
         "Return ONLY valid JSON: "
         '{"relevance": N, "empathy": N, "clarity": N, "actionability": N, "honesty_uncertainty": N}\n\n'
         + "\n".join(transcript)
     )
-    cache_key = hashlib.sha256(f"{judge.key}:{prompt}".encode("utf-8")).hexdigest()
-    if cache_key in cache:
-        cached = cache[cache_key]
-        return cached.get("scores"), cached.get("model")
 
-    msgs = [
-        CanonicalMessage(role="system", content="You are an impartial QA evaluator. Respond with JSON only."),
-        CanonicalMessage(role="user", content=prompt),
-    ]
-    for attempt in range(3):
-        try:
-            chunks: list[str] = []
-            async for ch in judge.stream_turn(messages=msgs, tools=[], temperature=0.0, max_tokens=160):
-                if ch.type == "token" and ch.text:
-                    chunks.append(ch.text)
-            raw = "".join(chunks).strip()
-            m = re.search(r"\{.*\}", raw, re.DOTALL)
-            if m:
-                parsed = json.loads(m.group(0))
-                keys = ("relevance", "empathy", "clarity", "actionability", "honesty_uncertainty")
-                scores = {k: round(float(parsed[k]), 2) for k in keys if k in parsed}
-                if len(scores) == len(keys):
-                    cache[cache_key] = {"scores": scores, "model": judge.key}
-                    _save_cache(cache_path, cache)
-                    return scores, judge.key
-            return None, judge.key
-        except ProviderRateLimitOrTransientError:
-            await asyncio.sleep(2 ** attempt)
-        except Exception:
-            break
+    for judge in ordered_judges:
+        cache_key = hashlib.sha256(f"{judge.key}:{prompt}".encode("utf-8")).hexdigest()
+        if cache_key in judge_cache:
+            cached = judge_cache[cache_key]
+            if cached.get("scores"):
+                return cached["scores"], cached.get("model")
+
+        msgs = [
+            CanonicalMessage(role="system", content="You are an impartial QA evaluator. Respond with raw JSON only."),
+            CanonicalMessage(role="user", content=prompt),
+        ]
+        for attempt in range(3):
+            if attempt > 0:
+                await asyncio.sleep(min(20.0, (2 ** (attempt + 1)) + random.uniform(0.2, 1.0)))
+            try:
+                chunks: list[str] = []
+                async for ch in judge.stream_turn(messages=msgs, tools=[], temperature=0.0, max_tokens=200):
+                    if ch.type == "token" and ch.text:
+                        chunks.append(ch.text)
+                raw = re.sub(r"```(?:json)?|```", "", "".join(chunks)).strip()
+                m = re.search(r"\{.*\}", raw, re.DOTALL)
+                if m:
+                    parsed = json.loads(m.group(0))
+                    keys = ("relevance", "empathy", "clarity", "actionability", "honesty_uncertainty")
+                    scores = {k: round(float(parsed[k]), 2) for k in keys if k in parsed}
+                    if len(scores) == len(keys):
+                        judge_cache[cache_key] = {"scores": scores, "model": judge.key}
+                        _save_cache(judge_cache_path, judge_cache)
+                        return scores, judge.key
+                break
+            except ProviderRateLimitOrTransientError as exc:
+                if exc.reason_code == "forbidden":
+                    router.mark_disabled(judge.key, reason="judge_403")
+                    break
+                continue
+            except Exception:
+                break
     return None, None
 
 
-def _render_markdown(
+def _render_eval_section(
     *,
+    section_kind: str,  # "Offline Mock" | "Live"
     trials: list[TrialMetrics],
-    mode: str,
     n: int,
     run_date_utc: str,
     responder_models: list[str],
     judge_models: list[str],
-    cache_hits_or_note: str,
+    note: str,
 ) -> str:
+    tag = section_kind  # Explicitly "Offline Mock" or "Live" on EVERY heading & table!
+    succeeded = [t for t in trials if t.succeeded]
+    failed = [t for t in trials if not t.succeeded]
+
     total_calls = len(trials)
-    total_turns = sum(t.total_turns for t in trials)
-    grounded_turns = sum(t.grounded_turns for t in trials)
-    turn_ground_pct = round(100.0 * grounded_turns / total_turns, 1) if total_turns else 0.0
+    succ_calls = len(succeeded)
+    total_turns = sum(t.total_turns for t in succeeded)
+    grounded_turns = sum(t.grounded_turns for t in succeeded)
 
-    total_nums = sum(t.total_number_tokens for t in trials)
-    grounded_nums = sum(t.grounded_number_tokens for t in trials)
-    num_ground_pct = round(100.0 * grounded_nums / total_nums, 1) if total_nums else 100.0
+    turn_ground_val = f"{round(100.0 * grounded_turns / total_turns, 1)}%" if total_turns else "not measured"
+    turn_ground_det = f"{grounded_turns}/{total_turns} turns with 0 ungrounded numbers" if total_turns else "0 turns completed"
 
-    matched_tools = sum(t.expected_tools_matched for t in trials)
-    expected_tools = sum(t.expected_tools_total for t in trials)
-    tool_acc_pct = round(100.0 * matched_tools / expected_tools, 1) if expected_tools else 0.0
+    total_nums = sum(t.total_number_tokens for t in succeeded)
+    grounded_nums = sum(t.grounded_number_tokens for t in succeeded)
+    num_ground_val = (
+        f"{round(100.0 * grounded_nums / total_nums, 1)}%"
+        if (total_turns and total_nums)
+        else ("not measured" if not total_turns else "100.0%")
+    )
+    num_ground_det = f"{grounded_nums}/{total_nums} spoken numeric tokens traced to tools" if total_turns else "not measured"
 
-    completed_calls = sum(1 for t in trials if t.reached_summary_or_close)
-    completion_pct = round(100.0 * completed_calls / total_calls, 1) if total_calls else 0.0
+    matched_tools = sum(t.expected_tools_matched for t in succeeded)
+    expected_tools = sum(t.expected_tools_total for t in succeeded)
+    tool_acc_val = f"{round(100.0 * matched_tools / expected_tools, 1)}%" if expected_tools else "not measured"
+    tool_acc_det = f"{matched_tools}/{expected_tools} expected phase tools executed" if expected_tools else "not measured"
 
-    all_words = [w for t in trials for w in t.word_counts]
-    avg_words = round(sum(all_words) / len(all_words), 1) if all_words else 0.0
-    max_words = max(all_words) if all_words else 0
+    completed_calls = sum(1 for t in succeeded if t.reached_summary_or_close)
+    comp_val = f"{round(100.0 * completed_calls / total_calls, 1)}%" if succ_calls else "not measured"
+    comp_det = f"{completed_calls}/{total_calls} attempted calls reached SUMMARY/CLOSE with card ({succ_calls}/{total_calls} completed without API failure)"
 
-    calls_with_commits = sum(1 for t in trials if t.commitments_count >= 1)
-    commit_rate_pct = round(100.0 * calls_with_commits / total_calls, 1) if total_calls else 0.0
-    total_commits = sum(t.commitments_count for t in trials)
+    all_words = [w for t in succeeded for w in t.word_counts]
+    words_val = f"{round(sum(all_words) / len(all_words), 1)} / {max(all_words)}" if all_words else "not measured"
 
-    ft_vals = [x for t in trials for x in t.first_token_ms]
-    fa_vals = [x for t in trials for x in t.first_audio_ms]
+    calls_with_commits = sum(1 for t in succeeded if t.commitments_count >= 1)
+    total_commits = sum(t.commitments_count for t in succeeded)
+    commit_val = f"{round(100.0 * calls_with_commits / total_calls, 1)}% ({total_commits} total)" if succ_calls else "not measured"
+
+    ft_vals = [x for t in succeeded for x in t.first_token_ms]
+    fa_vals = [x for t in succeeded for x in t.first_audio_ms]
     ft_p50 = f"{round(_percentile(ft_vals, 50), 1)} ms" if ft_vals else "not measured"
     ft_p95 = f"{round(_percentile(ft_vals, 95), 1)} ms" if ft_vals else "not measured"
     fa_p50 = f"{round(_percentile(fa_vals, 50), 1)} ms" if fa_vals else "not measured"
     fa_p95 = f"{round(_percentile(fa_vals, 95), 1)} ms" if fa_vals else "not measured"
 
-    scored_trials = [t.judge_scores for t in trials if t.judge_scores]
+    scored_trials = [t.judge_scores for t in succeeded if t.judge_scores]
     if scored_trials:
         rubric_keys = ("relevance", "empathy", "clarity", "actionability", "honesty_uncertainty")
         means = {
@@ -428,97 +548,135 @@ def _render_markdown(
         judge_summary = (
             f"{overall_judge} / 5.0 "
             f"(rel {means['relevance']}, emp {means['empathy']}, clr {means['clarity']}, "
-            f"act {means['actionability']}, unc {means['honesty_uncertainty']})"
+            f"act {means['actionability']}, unc {means['honesty_uncertainty']}; n={len(scored_trials)}/{total_calls})"
         )
     else:
         judge_summary = "not measured"
 
     lines = [
-        f"# {PROJECT_NAME} Evaluation Report",
+        f"## {tag} Evaluation ({tag})",
         "",
-        "## Run Metadata",
+        f"### Run Metadata ({tag})",
         f"- **Run Date (UTC):** {run_date_utc}",
-        f"- **Mode:** {mode}",
+        f"- **Evaluation Kind:** {tag}",
         f"- **Responder Model ID(s):** {', '.join(responder_models) if responder_models else 'not measured'}",
         f"- **Judge Model ID(s):** {', '.join(judge_models) if judge_models else 'not measured'}",
         f"- **N (trials per persona x scenario cell):** {n}",
-        f"- **Total Evaluated Calls:** {total_calls} ({len(PERSONAS)} personas x {len(SCENARIO_IDS)} scenarios x {n})",
+        f"- **Calls Succeeded / Attempted:** {succ_calls} / {total_calls} ({len(failed)} failed)",
         f"- **Total Assistant Turns:** {total_turns}",
-        f"- **Cache / Execution Note:** {cache_hits_or_note}",
+        f"- **Execution / Cache Note:** {note}",
         "",
-        "## Aggregate Measured Metrics",
+        f"### Aggregate Measured Metrics ({tag})",
         "",
-        "| Metric | Measured Value | Detail |",
+        f"| Metric ({tag}) | Measured Value | Detail |",
         "| --- | --- | --- |",
-        f"| Grounding rate (turns) | {turn_ground_pct}% | {grounded_turns}/{total_turns} turns with 0 ungrounded numbers |",
-        f"| Grounding rate (number tokens) | {num_ground_pct}% | {grounded_nums}/{total_nums} spoken numeric tokens traced to tools |",
-        f"| Expected tool-call accuracy | {tool_acc_pct}% | {matched_tools}/{expected_tools} expected phase tools executed |",
-        f"| Phase completion rate | {completion_pct}% | {completed_calls}/{total_calls} calls reached SUMMARY/CLOSE with card |",
-        f"| Words per turn (avg / max) | {avg_words} / {max_words} | Hard cap 45 words (60 in RECOMMEND) |",
-        f"| Commitments captured | {commit_rate_pct}% ({total_commits} total) | {calls_with_commits}/{total_calls} calls captured >=1 commitment |",
-        f"| LLM first-token latency (p50 / p95) | {ft_p50} / {ft_p95} | Computed from SSE `latency` events |",
-        f"| First-audio latency (p50 / p95) | {fa_p50} / {fa_p95} | Audio TTS synthesis/playback timing |",
-        f"| LLM-as-judge rubric score (1-5) | {judge_summary} | Relevance, empathy, clarity, actionability, uncertainty honesty |",
+        f"| Grounding rate (turns) | {turn_ground_val} | {turn_ground_det} |",
+        f"| Grounding rate (number tokens) | {num_ground_val} | {num_ground_det} |",
+        f"| Expected tool-call accuracy | {tool_acc_val} | {tool_acc_det} |",
+        f"| Phase completion rate | {comp_val} | {comp_det} |",
+        f"| Words per turn (avg / max) | {words_val} | Voice word budget (`45` default, `55` DIAGNOSE/RECOMMEND, `82` SUMMARY) |",
+        f"| Commitments captured | {commit_val} | {calls_with_commits}/{total_calls} calls captured >=1 commitment |",
+        f"| LLM first-token latency (p50 / p95) | {ft_p50} / {ft_p95} | SSE `latency.llm_first_token_ms` ({len(ft_vals)} turns measured) |",
+        f"| First-audio latency (p50 / p95) | {fa_p50} / {fa_p95} | Turn start -> first `sentence` + `edge-tts` MP3 ready ({len(fa_vals)} turns measured) |",
+        f"| Cross-model LLM-as-judge score (1-5) | {judge_summary} | Distinct judge model (`relevance, empathy, clarity, actionability, honesty_uncertainty`) |",
         "",
-        "## Breakdown by Scenario",
+        f"### Breakdown by Scenario ({tag})",
         "",
-        "| Scenario | Calls | Completion Rate | Tool Accuracy | Grounded Turns | Avg Words | Commitments |",
+        f"| Scenario ({tag}) | Calls | Completion Rate | Tool Accuracy | Grounded Turns | Avg Words | Commitments |",
         "| --- | --- | --- | --- | --- | --- | --- |",
     ]
 
     for sc in SCENARIO_IDS:
-        sub = [t for t in trials if t.scenario_id == sc]
-        if not sub:
+        sub_all = [t for t in trials if t.scenario_id == sc]
+        sub = [t for t in sub_all if t.succeeded]
+        if not sub_all:
             continue
-        sc_comp = round(100.0 * sum(1 for t in sub if t.reached_summary_or_close) / len(sub), 1)
+        if not sub:
+            lines.append(f"| Scenario {sc} ({tag}) | 0/{len(sub_all)} | not measured | not measured | not measured | not measured | not measured |")
+            continue
+        sc_comp = round(100.0 * sum(1 for t in sub if t.reached_summary_or_close) / len(sub_all), 1)
         sc_m = sum(t.expected_tools_matched for t in sub)
         sc_e = sum(t.expected_tools_total for t in sub)
-        sc_tool = round(100.0 * sc_m / sc_e, 1) if sc_e else 0.0
+        sc_tool = f"{round(100.0 * sc_m / sc_e, 1)}%" if sc_e else "not measured"
         sc_gt = sum(t.grounded_turns for t in sub)
         sc_tt = sum(t.total_turns for t in sub)
-        sc_gr = round(100.0 * sc_gt / sc_tt, 1) if sc_tt else 0.0
+        sc_gr = f"{round(100.0 * sc_gt / sc_tt, 1)}%" if sc_tt else "not measured"
         sc_words = [w for t in sub for w in t.word_counts]
-        sc_aw = round(sum(sc_words) / len(sc_words), 1) if sc_words else 0.0
+        sc_aw = str(round(sum(sc_words) / len(sc_words), 1)) if sc_words else "not measured"
         sc_comm = sum(t.commitments_count for t in sub)
-        lines.append(f"| Scenario {sc} | {len(sub)} | {sc_comp}% | {sc_tool}% | {sc_gr}% | {sc_aw} | {sc_comm} |")
+        lines.append(f"| Scenario {sc} ({tag}) | {len(sub)}/{len(sub_all)} | {sc_comp}% | {sc_tool} | {sc_gr} | {sc_aw} | {sc_comm} |")
 
     lines.extend(
         [
             "",
-            "## Breakdown by Persona",
+            f"### Breakdown by Persona ({tag})",
             "",
-            "| Persona | Calls | Completion Rate | Grounded Turns | Avg / Max Words | Commitments |",
-            "| --- | --- | --- | --- | --- | --- |",
+            f"| Persona ({tag}) | Calls | Completion Rate | Grounded Turns | Avg / Max Words | Commitments | Judge (1-5) |",
+            "| --- | --- | --- | --- | --- | --- | --- |",
         ]
     )
 
     for p in PERSONAS:
-        sub = [t for t in trials if t.persona_id == p.persona_id]
-        if not sub:
+        sub_all = [t for t in trials if t.persona_id == p.persona_id]
+        sub = [t for t in sub_all if t.succeeded]
+        if not sub_all:
             continue
-        p_comp = round(100.0 * sum(1 for t in sub if t.reached_summary_or_close) / len(sub), 1)
+        if not sub:
+            lines.append(f"| {p.persona_id} ({p.language}, {tag}) | 0/{len(sub_all)} | not measured | not measured | not measured | not measured | not measured |")
+            continue
+        p_comp = round(100.0 * sum(1 for t in sub if t.reached_summary_or_close) / len(sub_all), 1)
         p_gt = sum(t.grounded_turns for t in sub)
         p_tt = sum(t.total_turns for t in sub)
-        p_gr = round(100.0 * p_gt / p_tt, 1) if p_tt else 0.0
+        p_gr = f"{round(100.0 * p_gt / p_tt, 1)}%" if p_tt else "not measured"
         p_words = [w for t in sub for w in t.word_counts]
-        p_aw = round(sum(p_words) / len(p_words), 1) if p_words else 0.0
-        p_mw = max(p_words) if p_words else 0
+        p_w_str = f"{round(sum(p_words) / len(p_words), 1)} / {max(p_words)}" if p_words else "not measured"
         p_comm = sum(t.commitments_count for t in sub)
-        lines.append(f"| {p.persona_id} ({p.language}) | {len(sub)} | {p_comp}% | {p_gr}% | {p_aw} / {p_mw} | {p_comm} |")
+        p_judged = [sum(t.judge_scores.values()) / len(t.judge_scores) for t in sub if t.judge_scores]
+        p_j_str = f"{round(sum(p_judged) / len(p_judged), 2)} (n={len(p_judged)})" if p_judged else "not measured"
+        lines.append(f"| {p.persona_id} ({p.language}, {tag}) | {len(sub)}/{len(sub_all)} | {p_comp}% | {p_gr} | {p_w_str} | {p_comm} | {p_j_str} |")
 
-    lines.extend(
-        [
-            "",
-            "## Known Limitations",
-            "- Scripted seller personas simulate multi-turn interactions deterministically and do not capture spontaneous acoustic interruptions, background noise, or real Web Speech API STT errors (`first_audio_ms` and real microphone STT remain `not measured` in headless CI evaluation).",
-        ]
-    )
-    if mode.startswith("offline"):
-        lines.append(
-            "- Offline evaluation uses the deterministic in-process `MockLLMProvider`; first-token latencies reflect local Python execution rather than networked free-tier LLM API latency, and LLM-as-judge quality scores are reported as `not measured`."
-        )
-    lines.append("")
     return "\n".join(lines)
+
+
+def _extract_existing_block(doc: str, begin_marker: str, end_marker: str) -> str | None:
+    m = re.search(rf"{re.escape(begin_marker)}\s*(.*?)\s*{re.escape(end_marker)}", doc, re.DOTALL)
+    return m.group(1).strip() if m else None
+
+
+def _compose_document(*, live_block: str | None, offline_block: str | None) -> str:
+    live_body = live_block or (
+        "## Live Evaluation (Live)\n\n"
+        "*No live evaluation has been recorded in this report yet (`make eval-live`). "
+        "All live metrics remain `not measured` until executed.*"
+    )
+    offline_body = offline_block or (
+        "## Offline Mock Evaluation (Offline Mock)\n\n"
+        "*No offline evaluation recorded (`make eval`).*"
+    )
+    parts = [
+        f"# {PROJECT_NAME} Evaluation Report",
+        "",
+        "> **Strict Separation Policy:** Tables below are explicitly labeled **`Live`** or **`Offline Mock`** and are never combined. Any metric from a failed call or unmeasured channel is reported literally as **`not measured`**.",
+        "",
+        _LIVE_BEGIN,
+        live_body,
+        _LIVE_END,
+        "",
+        "---",
+        "",
+        _OFFLINE_BEGIN,
+        offline_body,
+        _OFFLINE_END,
+        "",
+        "---",
+        "",
+        "## Causal-Recovery & Known Limitations",
+        "- **Synthetic Causal-Recovery Scope:** All causal-recovery results (`200/200` top-driver recovery, `0.02 pp` mean absolute error in `tests/test_attribution_properties.py`) are measured strictly on **synthetic ground truth generated by the project's own scenario generator (`app/data/scenarios.py`)** and are **not claims about real-world marketplace causal accuracy**.",
+        "- **Offline vs Live Separation:** Offline Mock rows run deterministically in-process via `MockLLMProvider` (`first_audio_ms` and judge score reported as `not measured`). Live rows exercise real external LLM providers, cross-model judging, and server-side `edge-tts` MP3 synthesis timing (`first_audio_ms`).",
+        "- **Headless Microphone Gap:** Scripted seller personas simulate multi-turn interactions deterministically and do not capture live acoustic room noise, speaker echo, or browser `SpeechRecognition` STT errors; real browser microphone verification remains manual per [VOICE_TEST_CHECKLIST.md](VOICE_TEST_CHECKLIST.md).",
+        "",
+    ]
+    return "\n".join(parts)
 
 
 async def run_evaluation(
@@ -530,27 +688,38 @@ async def run_evaluation(
     max_calls: int | None = None,
 ) -> dict[str, Any]:
     settings = Settings()
-    cache_path = EVAL_CACHE_DIR / "eval_cache.json"
-    cache = _load_cache(cache_path)
+    EVAL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    call_cache_path = EVAL_CACHE_DIR / f"{mode}_calls_cache.json"
+    judge_cache_path = EVAL_CACHE_DIR / "eval_cache.json"
+    call_cache = _load_cache(call_cache_path)
+    judge_cache = _load_cache(judge_cache_path)
 
     if mode == "offline":
         router = LLMRouter(providers=[MockLLMProvider()])
-        mode_desc = "offline (hermetic MockLLMProvider)"
-        cache_note = "Offline mode; disk cache unused"
+        tts_service: TTSService | None = None
+        section_kind = "Offline Mock"
+        note = "Offline mode (`MockLLMProvider`); disk cache & audio TTS disabled (`not measured`)"
+        measure_audio = False
     else:
-        os.environ.setdefault("ALLOW_MOCK_LLM", "false")
-        live_settings = Settings(allow_mock_llm=False)
+        os.environ["ALLOW_MOCK_LLM"] = "false"
+        live_settings = Settings(allow_mock_llm=False, tts_cache_enabled=True)
         router = LLMRouter.from_settings(live_settings)
         if not router.configured_providers():
             raise RuntimeError("No live LLM API keys configured for --live evaluation.")
         await router.initialize_and_smoke_test(live_settings)
-        mode_desc = "live (free-tier LLM router with failover & backoff)"
-        cache_note = f"Disk judge/eval cache enabled at {cache_path.name} ({len(cache)} initial entries)"
+        tts_service = TTSService(live_settings)
+        section_kind = "Live"
+        note = f"Live API router with exponential backoff + disk cache ({call_cache_path.name}, {len(call_cache)} initial cached calls)"
+        measure_audio = True
 
     orchestrator = AgentOrchestrator(router=router)
-    store = SessionStore(ttl_seconds=settings.session_ttl_seconds, max_sessions=max(200, len(scenarios) * len(PERSONAS) * n + 10))
+    store = SessionStore(
+        ttl_seconds=max(settings.session_ttl_seconds, 7200),
+        max_sessions=max(200, len(scenarios) * len(PERSONAS) * n + 20),
+    )
 
     trials: list[TrialMetrics] = []
+    cache_hits = 0
     call_counter = 0
     for trial_idx in range(1, n + 1):
         for sc in scenarios:
@@ -558,43 +727,94 @@ async def run_evaluation(
                 if max_calls is not None and call_counter >= max_calls:
                     break
                 call_counter += 1
-                tm = await _run_single_trial(orchestrator, store, sc, persona, trial_idx)
-                if mode == "live":
+                tm, was_cached = await _run_single_trial(
+                    orchestrator,
+                    store,
+                    tts_service,
+                    sc,
+                    persona,
+                    trial_idx,
+                    measure_audio=measure_audio,
+                    live_mode=(mode == "live"),
+                    call_cache=call_cache,
+                    cache_path=call_cache_path,
+                )
+                if was_cached:
+                    cache_hits += 1
+                elif mode == "live":
+                    # Gentle inter-call pacing on free-tier RPM/TPM limits
+                    await asyncio.sleep(1.2)
+
+                if mode == "live" and tm.succeeded:
                     scores, jmodel = await _judge_transcript_live(
                         router,
                         tm.provider_models,
                         tm.transcript_lines,
-                        cache,
-                        cache_path,
+                        judge_cache,
+                        judge_cache_path,
                     )
                     tm.judge_scores = scores
                     tm.judge_model = jmodel
+                    if jmodel is not None and not tm.judge_scores:
+                        tm.judge_model = None
+                    if not was_cached:
+                        await asyncio.sleep(0.8)
+
+                if mode == "live":
+                    print(
+                        f"[eval-live {call_counter}/{len(scenarios) * len(PERSONAS) * n}] "
+                        f"sc={sc} persona={persona.persona_id} trial={trial_idx} "
+                        f"ok={tm.succeeded} turns={tm.total_turns} cached={was_cached} "
+                        f"resp={tm.provider_models} judge={tm.judge_model}",
+                        flush=True,
+                    )
+
                 trials.append(tm)
             if max_calls is not None and call_counter >= max_calls:
                 break
+        if max_calls is not None and call_counter >= max_calls:
+            break
 
-    responder_models = sorted({m for t in trials for m in t.provider_models})
+    responder_models = sorted({m for t in trials if t.succeeded for m in t.provider_models})
     judge_models = sorted({t.judge_model for t in trials if t.judge_model})
     run_date_utc = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    if mode == "live":
+        note = f"Live API router + exponential backoff + disk cache ({cache_hits}/{len(trials)} call cache hits)"
 
-    md = _render_markdown(
+    rendered_section = _render_eval_section(
+        section_kind=section_kind,
         trials=trials,
-        mode=mode_desc,
         n=n,
         run_date_utc=run_date_utc,
         responder_models=responder_models,
         judge_models=judge_models,
-        cache_hits_or_note=cache_note,
+        note=note,
     )
+
+    existing_doc = output_path.read_text(encoding="utf-8") if output_path.exists() else ""
+    existing_live = _extract_existing_block(existing_doc, _LIVE_BEGIN, _LIVE_END)
+    existing_offline = _extract_existing_block(existing_doc, _OFFLINE_BEGIN, _OFFLINE_END)
+    if existing_offline is None and existing_doc and "offline (hermetic MockLLMProvider)" in existing_doc:
+        existing_offline = None  # Force refresh if running from pre-marker format
+
+    if mode == "live":
+        full_md = _compose_document(live_block=rendered_section, offline_block=existing_offline)
+    else:
+        full_md = _compose_document(live_block=existing_live, offline_block=rendered_section)
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(md, encoding="utf-8")
+    output_path.write_bytes(full_md.replace("\r\n", "\n").encode("utf-8"))
 
     return {
         "total_calls": len(trials),
-        "mode": mode_desc,
+        "succeeded_calls": sum(1 for t in trials if t.succeeded),
+        "failed_calls": sum(1 for t in trials if not t.succeeded),
+        "mode": section_kind,
         "output_path": str(output_path),
         "responder_models": responder_models,
         "judge_models": judge_models,
+        "first_audio_measured_turns": sum(len(t.first_audio_ms) for t in trials),
+        "judged_calls": sum(1 for t in trials if t.judge_scores),
     }
 
 
