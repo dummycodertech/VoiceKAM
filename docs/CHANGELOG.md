@@ -79,3 +79,4 @@ The original assessment snapshot remains frozen on `main` at tag `v1.0-assessmen
 
 ## Round 3 — Hardening, Live Evaluation & Polish
 1. **Disable non-functional Gemini TTS tier cleanly:** Verified live Gemini API catalog omits `*-tts` models and rejects `speechConfig` under `generation_config` (`400 INVALID_ARGUMENT` / `404`). Removed Gemini TTS from `app/tts/service.py`, `app/config.py`, `app/main.py` (`/api/health` now reports `"chain": ["edge-tts", "browser"]`), `.env.example`, and all documentation (`2-tier TTS: edge-tts -> browser speechSynthesis`), with tests asserting the 2-tier health schema.
+2. **Line ending normalization (`.gitattributes`):** Added `.gitattributes` enforcing `eol=lf` across source, script, config, and Markdown files (preserving binaries), ran `git add --renormalize .`, refreshed working-copy checkouts to `lf`, and confirmed zero remaining `CRLF` entries in the index and a clean diff.
