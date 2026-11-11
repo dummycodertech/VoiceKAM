@@ -21,7 +21,7 @@ import edge_tts
 from google import genai
 from google.genai import types
 
-from app.config import Settings
+from app.config import AGENT_NAME, Settings
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +111,7 @@ class TTSService:
             }
             try:
                 audio, _ = await self._synthesize_gemini_tts(
-                    text="Namaste Rajesh ji.",
+                    text=f"Namaste, I am {AGENT_NAME}.",
                     model_id=model_id,
                     timeout_seconds=10.0,
                 )

@@ -6,6 +6,8 @@ import json
 from typing import Any
 
 from app.agent.session import Phase, SessionState
+from app.config import get_settings
+from app.data.seed_data import SELLER_PROFILE
 from app.engine.tools import TOOL_SCHEMAS
 
 # Signals for deterministic server phase transitions
@@ -43,7 +45,7 @@ def tools_for_phase(phase: Phase) -> list[dict[str, Any]]:
 
 
 def advance_phase_before_turn(session: SessionState, user_text: str) -> Phase:
-    """Deterministically advance phase BEFORE generating Riya's reply."""
+    """Deterministically advance phase BEFORE generating the agent's reply."""
     low = user_text.lower()
     p = session.phase
 
@@ -117,39 +119,41 @@ def advance_phase_after_turn(session: SessionState) -> Phase:
     return session.phase
 
 
-def _language_rule(language: str) -> str:
+def _language_rule(language: str, salutation: str) -> str:
     if language == "hi-IN":
         return (
-            "LANGUAGE: hi-IN. Speak natural conversational Hindi in Devanagari or simple Romanized Hindi? "
-            "Use clear Devanagari Hindi, keeping business words (stock, order, cancel, price, dispatch) in simple English or Hinglish."
+            "LANGUAGE: hi-IN. Speak natural conversational Hindi in Devanagari, "
+            "keeping business words (stock, order, cancel, price, dispatch) in simple English or Hinglish."
         )
     if language == "hinglish":
         return (
-            "LANGUAGE: hinglish. Speak warm, natural Indian Hinglish in Latin script (e.g., 'Haan Rajesh ji, maine check kiya...'), "
+            f"LANGUAGE: hinglish. Speak warm, natural Indian Hinglish in Latin script (e.g., 'Haan {salutation}, maine check kiya...'), "
             "keeping business terms (stock, order, cancel, price) in English."
         )
-    return "LANGUAGE: en-IN. Speak warm, natural Indian English addressing the seller as 'Rajesh ji'."
+    return f"LANGUAGE: en-IN. Speak warm, natural Indian English addressing the seller as '{salutation}'."
 
 
 def _phase_instruction(session: SessionState) -> str:
+    salutation = SELLER_PROFILE["salutation"]
+    shop_name = SELLER_PROFILE["shop_name"]
     p = session.phase
     if p == Phase.GREETING:
         if session.mode == "followup":
             return (
-                "GOAL: Greet Rajesh ji warmly for your 3-day follow-up call, cite the headline jump (Rs 1,35,000 -> Rs 1,75,500 pace, OOS 18 -> 9), "
-                "and ask if he has 2 minutes to review the last 2 blockers."
+                f"GOAL: Greet {salutation} warmly for your 3-day follow-up call, cite the headline jump (Rs 1,35,000 -> Rs 1,75,500 pace, OOS 18 -> 9), "
+                "and ask if they have 2 minutes to review the last 2 blockers."
             )
         if session.mode == "proactive":
             return (
                 "GOAL: Open proactively—state you noticed sales dropped 32.5% to Rs 1,35,000 and 18 products are out of stock, "
-                "and ask if Rajesh ji has 2 minutes to review this together."
+                f"and ask if {salutation} has 2 minutes to review this together."
             )
-        return "GOAL: Greet Rajesh ji warmly and ask how you can help Kumar Home & Kitchen today."
+        return f"GOAL: Greet {salutation} warmly and ask how you can help {shop_name} today."
 
     if p == Phase.UNDERSTAND:
         return (
-            "GOAL: Empathize sincerely with the sales drop (never defensive), acknowledge his concern, "
-            "and ask 1 focused question about what changed in his operations recently."
+            "GOAL: Empathize sincerely with the sales drop (never defensive), acknowledge their concern, "
+            "and ask 1 focused question about what changed in their operations recently."
         )
 
     if p == Phase.CLARIFY:
@@ -169,19 +173,19 @@ def _phase_instruction(session: SessionState) -> str:
         return (
             "GOAL: Give 2 ultra-short sentences under 35 words total: "
             "(1) ASP stayed flat at Rs 500, and 60% of the 130-order drop came from 18 out-of-stock products like 5L Pressure Cooker. "
-            "(2) 14% cancellations and 3 overpriced products explain the rest; ask if he is ready for the action plan."
+            "(2) 14% cancellations and 3 overpriced products explain the rest; ask if the seller is ready for the action plan."
         )
 
     if p == Phase.RECOMMEND:
         return (
             "GOAL: Share the prioritized actions from the pre-loaded action plan concisely (1st: restock top 5 OOS + alerts; "
-            "2nd: sync stock 2x/day & 2 PM dispatch SLA; 3rd: reprice 3 SKUs or explore promo/ads subject to eligibility) and ask for his buy-in."
+            "2nd: sync stock 2x/day & 2 PM dispatch SLA; 3rd: reprice 3 SKUs or explore promo/ads subject to eligibility) and ask for buy-in."
         )
 
     if p == Phase.COMMIT:
         return (
-            "GOAL: Drive ownership! Ask Rajesh ji to commit to specific due dates (e.g. restock within 48 hours, daily sync starting today). "
-            "If he agrees or states a timeline, IMMEDIATELY call commit_action and schedule_followup (targets: OOS <= 8, cancellations <= 10%)."
+            f"GOAL: Drive ownership! Ask {salutation} to commit to specific due dates (e.g. restock within 48 hours, daily sync starting today). "
+            "If the seller agrees or states a timeline, IMMEDIATELY call commit_action and schedule_followup (targets: OOS <= 8, cancellations <= 10%)."
         )
 
     if p == Phase.SUMMARY:
@@ -190,7 +194,7 @@ def _phase_instruction(session: SessionState) -> str:
             "committed actions with due dates, and the 3-day follow-up call."
         )
 
-    return "GOAL: Warmly close the call and thank Rajesh ji."
+    return f"GOAL: Warmly close the call and thank {salutation}."
 
 
 def build_system_prompt(
@@ -198,9 +202,15 @@ def build_system_prompt(
     precomputed_context: dict[str, Any] | None = None,
 ) -> str:
     """Build a compact (<400 token) system prompt for the active server-controlled phase."""
+    settings = get_settings()
+    agent_name = settings.agent_name_devanagari if session.language == "hi-IN" else settings.agent_name
+    seller_name = SELLER_PROFILE["seller_name"]
+    salutation = SELLER_PROFILE["salutation"]
+    shop_name = SELLER_PROFILE["shop_name"]
+    city = SELLER_PROFILE["city"]
     lines = [
-        "You are Riya, Snapdeal's warm, proactive Virtual Key Account Manager speaking with Rajesh Kumar (Rajesh ji) of Kumar Home & Kitchen, Delhi.",
-        _language_rule(session.language),
+        f"You are {agent_name}, a warm, proactive Virtual Key Account Manager for an online marketplace speaking with {seller_name} ({salutation}) of {shop_name}, {city}.",
+        _language_rule(session.language, salutation),
         f"CURRENT PHASE: {session.phase.value} | SNAPSHOT: {session.snapshot}",
         "STRICT VOICE RULES:",
         "- Keep replies to 1-2 short sentences (under 35 words; max 45 words; SUMMARY up to 65 words).",

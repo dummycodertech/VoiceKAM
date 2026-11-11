@@ -1,11 +1,22 @@
 import{AudioPlaybackQueue}from"/static/audio.js";
 import{createKamBrainController}from"/static/kam_brain.js";
 import{createVoiceViz}from"/static/viz.js";
-const S={inCall:false,sessionId:null,mode:"inbound",language:"en-IN",headphones:false,tts:"auto",orb:"idle",t0:0,timer:null,rec:null,recognizing:false,eou:null,silence:null,reprompted:false,interim:"",final:"",sttEnd:0,abort:null,done:0,hook:null};
+const S={inCall:false,sessionId:null,mode:"inbound",language:"en-IN",headphones:false,tts:"auto",orb:"idle",t0:0,timer:null,rec:null,recognizing:false,eou:null,silence:null,reprompted:false,interim:"",final:"",sttEnd:0,abort:null,done:0,hook:null,projectName:"VoiceKAM",agentName:"metis",sellerSalutation:"seller partner"};
 const el={};
 const $=id=>document.getElementById(id);
-const LABEL={idle:["Ready","Press Start call to talk with Riya"],listening:["Listening","Go ahead, Riya replies after a short pause"],thinking:["Checking","Riya is looking at your store data"],speaking:["Speaking",""]};
-const REPROMPT={"hi-IN":"राजेश जी, क्या आप सुन रहे हैं? आप बोल सकते हैं।",hinglish:"Rajesh ji, aap line par hain? Aap bata sakte hain.","en-IN":"Rajesh ji, are you still there? I am listening whenever you are ready."};
+const orbCopy=s=>{
+  const a=S.agentName;
+  if(s==="listening")return["Listening",`Go ahead, ${a} replies after a short pause`];
+  if(s==="thinking")return["Checking",`${a} is looking at your store data`];
+  if(s==="speaking")return["Speaking",""];
+  return["Ready",`Press Start call to talk with ${a}`];
+};
+const repromptText=lang=>{
+  const sal=S.sellerSalutation||"seller partner";
+  if(lang==="hi-IN")return`${sal}, क्या आप सुन रहे हैं? आप बोल सकते हैं।`;
+  if(lang==="hinglish")return`${sal}, aap line par hain? Aap bata sakte hain.`;
+  return`${sal}, are you still there? I am listening whenever you are ready.`;
+};
 const SR=()=>window.SpeechRecognition||window.webkitSpeechRecognition||null;
 
 const queue=new AudioPlaybackQueue({
@@ -15,14 +26,14 @@ const queue=new AudioPlaybackQueue({
 });
 
 function setOrb(s){
-  S.orb=s;el.micOrb.dataset.state=s;el.micOrb.textContent=LABEL[s][0];   // micOrb stays text-only
-  el.orbLabel.textContent=s==="speaking"?(S.headphones?"Riya is speaking. Talk to interrupt.":"Riya is speaking. Press Space to interrupt."):LABEL[s][1];
+  S.orb=s;const copy=orbCopy(s);el.micOrb.dataset.state=s;el.micOrb.textContent=copy[0];   // micOrb stays text-only
+  el.orbLabel.textContent=s==="speaking"?(S.headphones?`${S.agentName} is speaking. Talk to interrupt.`:`${S.agentName} is speaking. Press Space to interrupt.`):copy[1];
 }
 const showError=m=>{el.errorBannerText.textContent=m;el.errorBanner.classList.remove("hidden")};
 function caption(who,text,{interim=false,id=null}={}){
   el.captionsBox.querySelector(".captions-empty")?.remove();
   let n=id&&$(id);
-  if(!n){n=document.createElement("div");if(id)n.id=id;n.innerHTML='<div class="caption-who"></div><div class="caption-body"></div>';n.firstChild.textContent=who==="kam"?"Riya":"Rajesh ji";el.captionsBox.append(n)}
+  if(!n){n=document.createElement("div");if(id)n.id=id;n.innerHTML='<div class="caption-who"></div><div class="caption-body"></div>';n.firstChild.textContent=who==="kam"?S.agentName:(S.sellerSalutation||"Seller");el.captionsBox.append(n)}
   n.className=`caption-line ${who}${interim?" interim":""}`;n.lastChild.textContent=text;el.captionsBox.scrollTop=el.captionsBox.scrollHeight;
 }
 function phases(active,mode=S.mode){
@@ -38,7 +49,7 @@ function armSilence(){
   clearTimeout(S.silence);if(!S.inCall||S.reprompted)return;
   S.silence=setTimeout(()=>{
     if(!S.inCall||S.orb!=="listening"||S.reprompted)return;
-    S.reprompted=true;const t=REPROMPT[S.language]||REPROMPT["en-IN"];caption("kam",t);queue.enqueueSentence(t);
+    S.reprompted=true;const t=repromptText(S.language);caption("kam",t);queue.enqueueSentence(t);
   },6000);
 }
 function listen(){
@@ -120,7 +131,7 @@ async function stream(url,body){
   const resume=()=>{if(!queue.isPlaying&&!queue.queue.length&&S.inCall){queue.clearLatencyFiller();listen()}};
   try{
     const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),signal:ac.signal});
-    if(!r.ok)throw new Error(`Riya could not answer (HTTP ${r.status})`);
+    if(!r.ok)throw new Error(`${S.agentName} could not answer (HTTP ${r.status})`);
     await sse(r,(ev,d)=>{
       const h=S.hook;
       if(ev==="phase"){if(d.mode)S.mode=d.mode;phases(d.phase,d.mode||S.mode);h?.onPhase?.(d)}
@@ -136,21 +147,47 @@ async function stream(url,body){
       else if(ev==="done"){
         if(d.text)caption("kam",d.text,{id:cid});
         phases(d.phase,S.mode);S.done++;document.body.dataset.completedStreams=String(S.done);h?.onDone?.(d);resume();
-      }else if(ev==="error"){queue.clearLatencyFiller();showError(d.message||"Riya could not answer.");if(S.inCall)listen()}
+      }else if(ev==="error"){queue.clearLatencyFiller();showError(d.message||`${S.agentName} could not answer.`);if(S.inCall)listen()}
     });
   }catch(e){if(e.name!=="AbortError"){queue.clearLatencyFiller();showError(e.message);if(S.inCall)listen()}}
   finally{if(S.abort===ac)S.abort=null}
 }
+function applyBranding(branding,seller){
+  if(branding){
+    if(branding.project_name)S.projectName=branding.project_name;
+    if(branding.agent_name)S.agentName=branding.agent_name;
+    document.title=`${S.projectName} — ${S.agentName}`;
+    if(el.brandName)el.brandName.textContent=S.projectName;
+    if(el.footerNotice&&branding.footer_notice)el.footerNotice.textContent=branding.footer_notice;
+    if(el.selMode){
+      const inOpt=el.selMode.querySelector('option[value="inbound"]');
+      const prOpt=el.selMode.querySelector('option[value="proactive"]');
+      if(inOpt)inOpt.textContent=`Seller calls ${S.agentName}`;
+      if(prOpt)prOpt.textContent=`${S.agentName} calls seller`;
+    }
+    const ce=el.captionsBox?.querySelector(".captions-empty");
+    if(ce)ce.textContent=`Captions appear here as you and ${S.agentName} talk.`;
+    if(el.caseFileSection)el.caseFileSection.setAttribute("aria-label",`${S.agentName}'s case file`);
+  }
+  if(seller){
+    S.sellerSalutation=seller.salutation||seller.seller_name||S.sellerSalutation;
+    if(el.brandSub&&seller.shop_name)el.brandSub.textContent=`Virtual KAM · ${seller.shop_name}`;
+    queue.configure({salutation:S.sellerSalutation});
+  }
+  setOrb(S.orb);
+}
 async function init(){
-  ["browserBanner","errorBanner","errorBannerText","btnStartCall","btnEndCall","btnInterrupt","callTimer","micOrb","orbLabel","captionsBox","selMode","selLanguage","chkHeadphones","selTtsProvider","btnToggleDebug","debugBox","txtDebugInput","btnSendDebug","phaseStrip","ttsBadge","latencySttToToken","latencySttToAudio","latencyProvider","btnFollowup","kamBrainRoot","summaryCardSection","btnDismissError"].forEach(i=>el[i]=$(i));
-  S.hook=createKamBrainController({rootEl:el.kamBrainRoot,summaryEl:el.summaryCardSection,getAppState:()=>S});
+  ["browserBanner","errorBanner","errorBannerText","btnStartCall","btnEndCall","btnInterrupt","callTimer","micOrb","orbLabel","captionsBox","selMode","selLanguage","chkHeadphones","selTtsProvider","btnToggleDebug","debugBox","txtDebugInput","btnSendDebug","phaseStrip","ttsBadge","latencySttToToken","latencySttToAudio","latencyProvider","btnFollowup","kamBrainRoot","summaryCardSection","btnDismissError","brandName","brandSub","footerNotice","caseFileSection"].forEach(i=>el[i]=$(i));
+  S.hook=createKamBrainController({rootEl:el.kamBrainRoot,summaryEl:el.summaryCardSection,getBranding:()=>({agentName:S.agentName,projectName:S.projectName})});
   S.viz=createVoiceViz({canvas:$("spectrum"),getState:()=>S.orb,getTts:()=>queue.analyser()});
   phases("GREETING",el.selMode.value);setOrb("idle");
   if(!SR())el.browserBanner.classList.remove("hidden");
   try{
     const[h,d]=await Promise.all([fetch("/api/health"),fetch("/api/demo-data")]);
-    if(h.ok&&!(await h.json()).active_llm_chain?.length)showError("No LLM keys are configured. Add GROQ_API_KEY or GEMINI_API_KEY to .env.");
-    if(d.ok)S.hook.onDemoData(await d.json());
+    let hj=null,dj=null;
+    if(h.ok){hj=await h.json();if(!hj.active_llm_chain?.length)showError("No LLM keys are configured. Add GROQ_API_KEY or GEMINI_API_KEY to .env.")}
+    if(d.ok){dj=await d.json();S.hook.onDemoData(dj)}
+    applyBranding(hj?.branding,dj?.overview?.seller);
   }catch{}
   el.btnStartCall.onclick=()=>startCall();el.btnEndCall.onclick=endCall;el.btnInterrupt.onclick=interrupt;
   el.btnDismissError.onclick=()=>el.errorBanner.classList.add("hidden");

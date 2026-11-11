@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: snapdeal-virtual-kam
+    name: voicekam-virtual-kam
     runtime: python
     region: singapore
     plan: free

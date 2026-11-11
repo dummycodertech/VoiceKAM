@@ -6,6 +6,7 @@ import json
 import re
 from typing import Any, AsyncIterator
 
+from app.data.seed_data import SELLER_PROFILE
 from app.llm.base import (
     CanonicalMessage,
     LLMProvider,
@@ -88,7 +89,7 @@ class MockLLMProvider(LLMProvider):
                             arguments={
                                 "action_id": "ACT-1",
                                 "action_summary": "Restock top 5 OOS products and fix stock sync",
-                                "owner": "Rajesh Kumar",
+                                "owner": SELLER_PROFILE["seller_name"],
                                 "due_date": "Within 48 hours",
                                 "target_metric": "Out-of-stock products <= 8",
                             },
@@ -142,32 +143,34 @@ class MockLLMProvider(LLMProvider):
         last_user: str,
         recent_tools: dict[str, dict[str, Any]],
     ) -> str:
+        salutation = SELLER_PROFILE["salutation"]
+        shop_name = SELLER_PROFILE["shop_name"]
         if is_followup and phase == "GREETING":
             return (
-                "Namaste Rajesh ji, calling for our 3-day check-in. "
+                f"Namaste {salutation}, calling for our 3-day check-in. "
                 "Your daily sales pace jumped 30% to Rs 1,75,500 and out-of-stock products dropped from 18 to 9. Should we review the last 2 blockers?"
             )
         if phase == "GREETING":
             return (
-                "Namaste Rajesh ji, I noticed your sales dropped 32.5% to Rs 1,35,000 and 18 products went out of stock. "
+                f"Namaste {salutation}, I noticed your sales dropped 32.5% to Rs 1,35,000 and 18 products went out of stock. "
                 "Do you have 2 minutes to fix this together?"
             )
         if phase == "UNDERSTAND":
             if any(w in last_user for w in ("angry", "frustrated", "fed up", "cancel", "waste", "useless", "problem")):
-                return "I understand how frustrating this 32.5% drop is, Rajesh ji. Have any bestsellers recently run out of stock in your warehouse?"
-            return "I understand how worrying this drop is, Rajesh ji. Did any top-selling kitchen products run out of stock recently?"
+                return f"I understand how frustrating this 32.5% drop is, {salutation}. Have any bestsellers recently run out of stock in your warehouse?"
+            return f"I understand how worrying this drop is, {salutation}. Did any top-selling kitchen products run out of stock recently?"
         if phase == "CLARIFY":
             if "stock" in last_user or "out" in last_user or "yes" in last_user or "supplier" in last_user:
-                return "Got it, Rajesh ji. Were there also any dispatch delays or stock-sync mismatches during pickup?"
+                return f"Got it, {salutation}. Were there also any dispatch delays or stock-sync mismatches during pickup?"
             return "Okay, I see. Did you notice delays in dispatch or any competitor price changes recently?"
         if phase in ("DIAGNOSE", "REVIEW_COMMITMENTS"):
             if is_followup:
                 return (
-                    "Great progress, Rajesh ji: 4 of 5 products are restocked and cancellations fell from 14% to 10.5%. "
+                    f"Great progress, {salutation}: 4 of 5 products are restocked and cancellations fell from 14% to 10.5%. "
                     "Only Storage Jars HK-009 is out of stock and Spatula Set HK-021 is 8.3% above competition. Shall we close those?"
                 )
             return (
-                "Rajesh ji, your average price stayed flat at Rs 500, so this is a volume issue: 60% of the 130-order drop is from 18 out-of-stock products like the 5L Pressure Cooker, "
+                f"{salutation}, your average price stayed flat at Rs 500, so this is a volume issue: 60% of the 130-order drop is from 18 out-of-stock products like the 5L Pressure Cooker, "
                 "plus 14% cancellations and 3 overpriced items. Ready for the action plan?"
             )
         if phase == "RECOMMEND":
@@ -177,12 +180,12 @@ class MockLLMProvider(LLMProvider):
             )
         if phase == "COMMIT":
             if "commit_action" in recent_tools:
-                return "Thank you, Rajesh ji. I have logged your 48-hour commitment and scheduled our follow-up in 3 days targeting 8 or fewer out-of-stock products and under 10% cancellations. Shall I send the summary?"
-            return "Perfect, Rajesh ji. Can you confirm you will restock the top 5 products within 48 hours and sync inventory daily starting today?"
+                return f"Thank you, {salutation}. I have logged your 48-hour commitment and scheduled our follow-up in 3 days targeting 8 or fewer out-of-stock products and under 10% cancellations. Shall I send the summary?"
+            return f"Perfect, {salutation}. Can you confirm you will restock the top 5 products within 48 hours and sync inventory daily starting today?"
         if phase == "SUMMARY":
             return (
-                "Here is our recap, Rajesh ji: 60% of the 32.5% drop came from out-of-stock products, alongside 14% cancellations and 3 overpriced items. "
+                f"Here is our recap, {salutation}: 60% of the 32.5% drop came from out-of-stock products, alongside 14% cancellations and 3 overpriced items. "
                 "You committed to restocking within 48 hours, and I sent your summary with a 3-day follow-up. Anything else?"
             )
-        return "Thank you for your time, Rajesh ji. Wishing Kumar Home & Kitchen strong sales this week!"
+        return f"Thank you for your time, {salutation}. Wishing {shop_name} strong sales this week!"
 

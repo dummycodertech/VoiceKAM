@@ -1,13 +1,18 @@
-const FILLER={"hi-IN":"जी, एक सेकंड, मैं आपका डेटा देख रही हूँ।",hinglish:"Ji, ek second, main aapka data dekh rahi hoon.","en-IN":"One moment Rajesh ji, checking your account data."};
 const synth=()=>("speechSynthesis" in window?window.speechSynthesis:null);
 export class AudioPlaybackQueue{
-  constructor(cb={}){this.cb=cb;this.queue=[];this.isPlaying=false;this.aborted=false;this.language="en-IN";this.ttsProvider="auto";this.fillerTimer=null;this.fillerOn=false;this.ctrls=new Set();this.gen=0;this.resolveCur=null;this.audio=null;this.ctx=null;this.an=null;this.src=null}
-  configure({language,ttsProvider}){if(language)this.language=language;if(ttsProvider)this.ttsProvider=ttsProvider}
+  constructor(cb={}){this.cb=cb;this.queue=[];this.isPlaying=false;this.aborted=false;this.language="en-IN";this.ttsProvider="auto";this.salutation="seller partner";this.fillerTimer=null;this.fillerOn=false;this.ctrls=new Set();this.gen=0;this.resolveCur=null;this.audio=null;this.ctx=null;this.an=null;this.src=null}
+  configure({language,ttsProvider,salutation}={}){if(language)this.language=language;if(ttsProvider)this.ttsProvider=ttsProvider;if(salutation)this.salutation=salutation}
+  fillerText(lang=this.language){
+    const sal=this.salutation||"seller partner";
+    if(lang==="hi-IN")return"जी, एक सेकंड, मैं आपका डेटा देख रही हूँ।";
+    if(lang==="hinglish")return"Ji, ek second, main aapka data dekh rahi hoon.";
+    return`One moment ${sal}, checking your account data.`;
+  }
   ensureCtx(){try{if(!this.ctx){const C=window.AudioContext||window.webkitAudioContext;if(!C)return;this.ctx=new C();this.an=this.ctx.createAnalyser();this.an.fftSize=256;this.an.smoothingTimeConstant=.78;this.an.connect(this.ctx.destination)}if(this.ctx.state==="suspended")this.ctx.resume().catch(()=>{})}catch{}}
   tap(a){try{this.ensureCtx();if(!this.ctx||this.ctx.state!=="running")return;this.src=this.ctx.createMediaElementSource(a);this.src.connect(this.an)}catch{this.src=null}}   // if the context is not running, audio plays untapped
   analyser(){return this.src?this.an:null}   // null while browser TTS speaks, the visualizer then simulates
   playRingtone(){this.ensureCtx();try{const c=new(window.AudioContext||window.webkitAudioContext)(),t=c.currentTime;for(let i=0;i<2;i++){const o=c.createOscillator(),g=c.createGain(),s=t+i*.35;o.frequency.value=440;g.gain.setValueAtTime(.0001,s);g.gain.exponentialRampToValueAtTime(.06,s+.03);g.gain.exponentialRampToValueAtTime(.0001,s+.25);o.connect(g);g.connect(c.destination);o.start(s);o.stop(s+.26)}setTimeout(()=>c.close().catch(()=>{}),900)}catch{}}
-  scheduleLatencyFiller(ms=600){this.clearLatencyFiller();this.fillerTimer=setTimeout(()=>{if(this.isPlaying||this.queue.length)return;this.fillerOn=true;this.speak(FILLER[this.language]||FILLER["en-IN"],true).finally(()=>{this.fillerOn=false})},ms)}
+  scheduleLatencyFiller(ms=600){this.clearLatencyFiller();this.fillerTimer=setTimeout(()=>{if(this.isPlaying||this.queue.length)return;this.fillerOn=true;this.speak(this.fillerText(this.language),true).finally(()=>{this.fillerOn=false})},ms)}
   clearLatencyFiller(){clearTimeout(this.fillerTimer);this.fillerTimer=null}
   enqueueSentence(text,onFirst){
     const t=(text||"").trim();if(!t)return;

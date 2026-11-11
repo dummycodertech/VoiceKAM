@@ -22,7 +22,7 @@ cleanup() {
 }
 trap cleanup INT TERM EXIT
 
-echo "Starting Snapdeal Virtual KAM on http://127.0.0.1:${PORT} ..."
+echo "Starting VoiceKAM on http://127.0.0.1:${PORT} ..."
 "$PY" -m uvicorn app.main:app --host 127.0.0.1 --port "$PORT" --workers 1 &
 SERVER_PID=$!
 

@@ -1,9 +1,21 @@
-"""Application configuration loaded from environment variables / .env."""
+"""Central branding and application configuration loaded from environment variables / .env."""
 
 from __future__ import annotations
 
 from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# ---------------------------------------------------------------------------
+# Central Branding Constants (change here to rename across backend, API & UI)
+# ---------------------------------------------------------------------------
+PROJECT_NAME = "VoiceKAM"
+AGENT_NAME = "metis"
+AGENT_NAME_DEVANAGARI = "metis"
+FOOTER_NOTICE = "Prototype. Uses synthetic data. Not affiliated with any marketplace."
+PRIVACY_NOTICE = (
+    "Do not upload real or confidential seller data; "
+    "free LLM tiers may use prompts to improve their products."
+)
 
 
 class Settings(BaseSettings):
@@ -12,6 +24,13 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    # Central Branding (overridable via env, defaulting to constants above)
+    project_name: str = PROJECT_NAME
+    agent_name: str = AGENT_NAME
+    agent_name_devanagari: str = AGENT_NAME_DEVANAGARI
+    footer_notice: str = FOOTER_NOTICE
+    privacy_notice: str = PRIVACY_NOTICE
 
     # Primary LLM: Groq Free Tier (ordered chain, filtered live via /models at startup)
     groq_api_key: str = ""
@@ -54,6 +73,15 @@ class Settings(BaseSettings):
 
     def gemini_tts_model_list(self) -> list[str]:
         return [m.strip() for m in self.gemini_tts_models.split(",") if m.strip()]
+
+    def branding_dict(self) -> dict[str, str]:
+        return {
+            "project_name": self.project_name,
+            "agent_name": self.agent_name,
+            "agent_name_devanagari": self.agent_name_devanagari,
+            "footer_notice": self.footer_notice,
+            "privacy_notice": self.privacy_notice,
+        }
 
 
 @lru_cache(maxsize=1)

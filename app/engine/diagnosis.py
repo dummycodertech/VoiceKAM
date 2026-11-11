@@ -412,13 +412,14 @@ def run_diagnosis(snapshot: SnapshotType = "current") -> dict[str, Any]:
 
 def build_action_plan(snapshot: SnapshotType = "current") -> dict[str, Any]:
     """Rule-based prioritised action plan ranked by impact and effort."""
+    owner_name = SELLER_PROFILE["seller_name"]
     if snapshot == "followup":
         actions = [
             {
                 "action_id": "ACT-FU-1",
                 "priority": 1,
                 "title": "Expedite HK-009 (Airtight Storage Jars) restock or temporary alternate pack",
-                "owner": "Rajesh Kumar",
+                "owner": owner_name,
                 "effort": "Low-Medium",
                 "impact": "High",
                 "target_skus": ["HK-009"],
@@ -433,7 +434,7 @@ def build_action_plan(snapshot: SnapshotType = "current") -> dict[str, Any]:
                 "action_id": "ACT-FU-2",
                 "priority": 2,
                 "title": "Lock 2 PM daily manifest cutoff to push cancellation rate under 10%",
-                "owner": "Rajesh Kumar",
+                "owner": owner_name,
                 "effort": "Low",
                 "impact": "Medium-High",
                 "target_skus": ["Warehouse Dispatch Queue"],
@@ -448,7 +449,7 @@ def build_action_plan(snapshot: SnapshotType = "current") -> dict[str, Any]:
                 "action_id": "ACT-FU-3",
                 "priority": 3,
                 "title": "Reprice HK-021 (Silicone Spatula Set) from Rs 300 to Rs 280 and consider visibility boost",
-                "owner": "Rajesh Kumar",
+                "owner": owner_name,
                 "effort": "Low",
                 "impact": "Medium",
                 "target_skus": ["HK-021"],
@@ -466,7 +467,7 @@ def build_action_plan(snapshot: SnapshotType = "current") -> dict[str, Any]:
                 "action_id": "ACT-1",
                 "priority": 1,
                 "title": "Restock top 5 high-velocity OOS products and enable low-stock alerts",
-                "owner": "Rajesh Kumar",
+                "owner": owner_name,
                 "effort": "Medium",
                 "impact": "Very High (~60% of drop)",
                 "target_skus": ["HK-006", "HK-007", "HK-008", "HK-009", "HK-010"],
@@ -481,7 +482,7 @@ def build_action_plan(snapshot: SnapshotType = "current") -> dict[str, Any]:
                 "action_id": "ACT-2",
                 "priority": 2,
                 "title": "Fix daily inventory sync & dispatch before SLA cutoff to cut cancellations below 10%",
-                "owner": "Rajesh Kumar",
+                "owner": owner_name,
                 "effort": "Low",
                 "impact": "High (~20% of drop + search rank protection)",
                 "target_skus": ["Storewide Stock Sync", "Dispatch Queue"],
@@ -496,7 +497,7 @@ def build_action_plan(snapshot: SnapshotType = "current") -> dict[str, Any]:
                 "action_id": "ACT-3",
                 "priority": 3,
                 "title": "Reprice 3 overpriced bestsellers within 2% of lowest offer (or run a promo/ads boost)",
-                "owner": "Rajesh Kumar",
+                "owner": owner_name,
                 "effort": "Low",
                 "impact": "Medium-High (~20% of drop)",
                 "target_skus": ["HK-019", "HK-020", "HK-021"],

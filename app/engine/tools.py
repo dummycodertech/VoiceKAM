@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
+from app.config import get_settings
+from app.data.seed_data import SELLER_PROFILE
 from app.engine import diagnosis
 
 if TYPE_CHECKING:
@@ -16,7 +18,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "get_seller_overview",
-            "description": "Get Rajesh Kumar's store profile and headline monthly performance summary (sales, orders, ASP, OOS, cancellations).",
+            "description": "Get the seller's store profile and headline monthly performance summary (sales, orders, ASP, OOS, cancellations).",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -95,7 +97,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "properties": {
                     "action_id": {"type": "string", "description": "Action identifier, e.g. ACT-1, ACT-2, ACT-3."},
                     "action_summary": {"type": "string", "description": "Short clear summary of the committed action."},
-                    "owner": {"type": "string", "description": "Who owns executing this action (usually Rajesh Kumar or KAM Support)."},
+                    "owner": {"type": "string", "description": "Who owns executing this action (usually the seller or KAM Support)."},
                     "due_date": {"type": "string", "description": "Target completion date or timeframe agreed by the seller."},
                     "target_metric": {"type": "string", "description": "Optional measurable target, e.g. OOS <= 8 products."},
                 },
@@ -144,14 +146,17 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
 
 
 def _format_whatsapp_summary(session: SessionState, key_issues: list[str]) -> str:
+    settings = get_settings()
+    seller_name = SELLER_PROFILE["seller_name"]
+    shop_name = SELLER_PROFILE["shop_name"]
     header = (
-        "*Snapdeal Virtual KAM — 3-Day Follow-Up Summary (Prototype)*"
+        f"*{settings.project_name} — 3-Day Follow-Up Summary (Prototype)*"
         if session.mode == "followup"
-        else "*Snapdeal Virtual KAM — Call Summary (Prototype)*"
+        else f"*{settings.project_name} — Call Summary (Prototype)*"
     )
     lines = [
         header,
-        "Seller: Rajesh Kumar (Kumar Home & Kitchen)",
+        f"Seller: {seller_name} ({shop_name})",
         f"Date: {datetime.now(timezone.utc).strftime('%d %b %Y')}",
         "",
         "*Key Findings:*",
@@ -179,7 +184,7 @@ def _format_whatsapp_summary(session: SessionState, key_issues: list[str]) -> st
         lines.append("*Success Targets:* Out-of-stock products <= 8; Cancellation rate <= 10%")
 
     lines.append("")
-    lines.append("_Prototype mock data summary — Riya, Virtual KAM_")
+    lines.append(f"_Prototype synthetic data summary — {settings.agent_name}, Virtual KAM_")
     return "\n".join(lines)
 
 
@@ -221,7 +226,7 @@ def execute_tool(
         commitment = {
             "action_id": str(args.get("action_id", f"ACT-{len(session.commitments) + 1 if session else 1}")),
             "action_summary": str(args.get("action_summary", "")).strip(),
-            "owner": str(args.get("owner", "Rajesh Kumar")).strip(),
+            "owner": str(args.get("owner", SELLER_PROFILE["seller_name"])).strip(),
             "due_date": str(args.get("due_date", "Within 48 hours")).strip(),
             "target_metric": str(args.get("target_metric", "")).strip(),
             "status": "committed",
@@ -275,8 +280,8 @@ def execute_tool(
         if session is not None:
             whatsapp_text = _format_whatsapp_summary(session, issues)
             summary_card = {
-                "seller_name": "Rajesh Kumar",
-                "shop_name": "Kumar Home & Kitchen",
+                "seller_name": SELLER_PROFILE["seller_name"],
+                "shop_name": SELLER_PROFILE["shop_name"],
                 "key_issues": issues,
                 "commitments": list(session.commitments),
                 "followup": session.followup_schedule
@@ -293,8 +298,8 @@ def execute_tool(
         return {
             "sent": True,
             "summary_card": {
-                "seller_name": "Rajesh Kumar",
-                "shop_name": "Kumar Home & Kitchen",
+                "seller_name": SELLER_PROFILE["seller_name"],
+                "shop_name": SELLER_PROFILE["shop_name"],
                 "key_issues": issues,
                 "commitments": [],
                 "followup": {"followup_date": "In 3 days", "success_targets": []},

@@ -22,6 +22,8 @@ from app.agent.state_machine import (
     build_system_prompt,
     tools_for_phase,
 )
+from app.config import get_settings
+from app.data.seed_data import SELLER_PROFILE
 from app.engine.tools import execute_tool
 from app.llm.base import CanonicalMessage, ToolCallRequest
 from app.llm.router import LLMRouter
@@ -187,12 +189,24 @@ class AgentOrchestrator:
 
         if session.mode == "inbound":
             # Instant zero-LLM greeting for Inbound mode (low latency, warm persona)
+            settings = get_settings()
+            salutation = SELLER_PROFILE["salutation"]
+            shop_name = SELLER_PROFILE["shop_name"]
             if session.language == "hi-IN":
-                greeting = "नमस्ते राजेश जी, मैं रिया हूँ, स्नैपडील से आपकी अकाउंट मैनेजर। आज मैं आपकी क्या मदद कर सकती हूँ?"
+                greeting = (
+                    f"नमस्ते {salutation}, मैं {settings.agent_name_devanagari} हूँ, आपकी मार्केटप्लेस अकाउंट मैनेजर। "
+                    "आज मैं आपकी क्या मदद कर सकती हूँ?"
+                )
             elif session.language == "hinglish":
-                greeting = "Namaste Rajesh ji, main Riya bol rahi hoon, aapki Snapdeal account manager. Aaj main aapki kya help kar sakti hoon?"
+                greeting = (
+                    f"Namaste {salutation}, main {settings.agent_name} bol rahi hoon, aapki marketplace account manager. "
+                    "Aaj main aapki kya help kar sakti hoon?"
+                )
             else:
-                greeting = "Namaste Rajesh ji, I am Riya, your Snapdeal account manager. How can I help Kumar Home and Kitchen today?"
+                greeting = (
+                    f"Namaste {salutation}, I am {settings.agent_name}, your marketplace account manager. "
+                    f"How can I help {shop_name} today?"
+                )
 
             session.messages.append(CanonicalMessage(role="assistant", content=greeting))
             yield _sse("token", {"text": greeting})
@@ -388,12 +402,13 @@ class AgentOrchestrator:
         # Enforce voice word-count cap & clean text
         cleaned_reply = enforce_voice_length(final_text, session.phase.value, max_words=45)
         if not cleaned_reply:
+            salutation = SELLER_PROFILE["salutation"]
             if session.commitments and session.phase == Phase.COMMIT:
-                cleaned_reply = "Got it, Rajesh ji. I have noted your commitment with due dates and follow-up targets. Shall I send the summary?"
+                cleaned_reply = f"Got it, {salutation}. I have noted your commitment with due dates and follow-up targets. Shall I send the summary?"
             elif session.summary_card and session.phase == Phase.SUMMARY:
                 cleaned_reply = "I have sent your call summary with key issues, action deadlines, and our 3-day follow-up check-in."
             else:
-                cleaned_reply = "Got it, Rajesh ji. Please tell me your preferred timeline so I can lock your action plan."
+                cleaned_reply = f"Got it, {salutation}. Please tell me your preferred timeline so I can lock your action plan."
             yield _sse("token", {"text": cleaned_reply})
             yield _sse(
                 "sentence",

@@ -1,6 +1,6 @@
 [project]
-name = "snapdeal-virtual-kam"
-version = "0.1.0"
+name = "voicekam"
+version = "0.2.0"
 description = "Voice-first AI Key Account Manager prototype for marketplace seller diagnostics"
 readme = "README.md"
 requires-python = ">=3.11"

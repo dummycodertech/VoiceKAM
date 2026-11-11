@@ -1,4 +1,4 @@
-"""Deterministic mock data generator for 'Kumar Home & Kitchen' (60 SKUs).
+"""Deterministic mock data generator for 'Metro Home & Kitchen' (60 SKUs).
 
 All numbers are mock prototype data designed to reconcile exactly across SKU,
 cancellation, and funnel views.
@@ -14,15 +14,15 @@ SnapshotType = Literal["current", "followup"]
 DATA_SEED = 42
 
 SELLER_PROFILE = {
-    "seller_id": "MOCK-DL-4821",
-    "seller_name": "Rajesh Kumar",
-    "salutation": "Rajesh ji",
-    "shop_name": "Kumar Home & Kitchen",
+    "seller_id": "DEMO-DL-4821",
+    "seller_name": "Arjun Mehta",
+    "salutation": "Arjun ji",
+    "shop_name": "Metro Home & Kitchen",
     "city": "Delhi",
     "category": "Home & Kitchen",
     "active_catalog_size": 60,
     "tenure_months": 30,
-    "prototype_notice": "Prototype - Mock Data Only",
+    "prototype_notice": "Prototype. Uses synthetic data. Not affiliated with any marketplace.",
 }
 
 
@@ -43,7 +43,7 @@ class SkuRecord:
 
 
 def build_sku_catalog() -> list[SkuRecord]:
-    """Generate the exact 60-SKU catalog for Kumar Home & Kitchen."""
+    """Generate the exact 60-SKU catalog for Metro Home & Kitchen."""
     skus: list[SkuRecord] = []
 
     # Group A: 5 Chronic OOS SKUs (OOS last month and this month, 0 orders both months)
@@ -278,7 +278,7 @@ VISIBILITY_FUNNEL = {
 }
 
 # Follow-up snapshot ("3 days later" simulation):
-# Shows partial recovery after Rajesh ji acts on earlier commitments, leaving 1-2 blockers to close.
+# Shows partial recovery after the seller acts on earlier commitments, leaving 1-2 blockers to close.
 FOLLOWUP_SNAPSHOT = {
     "days_elapsed": 3,
     "label": "3 Days Later (Follow-up Review)",
@@ -320,7 +320,7 @@ FOLLOWUP_SNAPSHOT = {
         {
             "action_id": "ACT-1",
             "action": "Restock top 5 out-of-stock products and enable low-stock alerts",
-            "owner": "Rajesh Kumar",
+            "owner": "Arjun Mehta",
             "due_date": "Within 48 hours",
             "status": "partially_done",
             "progress_note": "4 of top 5 restocked (HK-006, HK-007, HK-008, HK-010). HK-009 still out of stock awaiting supplier; total OOS down from 18 to 9 (target <= 8).",
@@ -328,7 +328,7 @@ FOLLOWUP_SNAPSHOT = {
         {
             "action_id": "ACT-2",
             "action": "Sync warehouse stock twice daily and clear morning dispatch before 2 PM cutoff",
-            "owner": "Rajesh Kumar",
+            "owner": "Arjun Mehta",
             "due_date": "Daily",
             "status": "partially_done",
             "progress_note": "Stock-unavailable cancellations fell sharply, bringing total cancellation rate from 14% to 10.5% (just shy of <= 10% target due to 2 dispatch delays).",
@@ -336,7 +336,7 @@ FOLLOWUP_SNAPSHOT = {
         {
             "action_id": "ACT-3",
             "action": "Match competitor pricing within 2% on 3 overpriced products",
-            "owner": "Rajesh Kumar",
+            "owner": "Arjun Mehta",
             "due_date": "Within 3 days",
             "status": "partially_done",
             "progress_note": "Repriced Kettle (HK-019) and Dish Rack (HK-020); Spatula Set (HK-021) is still 8.3% above competitor.",

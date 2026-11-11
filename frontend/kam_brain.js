@@ -15,8 +15,10 @@ const SUM={
   get_metric_comparison:r=>`Sales ${r.metrics?.sales_gmv?.delta_pct}%, price flat`,
   get_seller_overview:()=>"Loaded the seller account"
 };
-export function createKamBrainController({rootEl,summaryEl}){
+export function createKamBrainController({rootEl,summaryEl,getBranding}){
   const b={m:null,diag:null,oos:null,price:null,plan:null,commits:[],prior:[],fu:null,tools:[],fail:null,prov:"-",bad:0,follow:false};
+  const agentName=()=>getBranding?.()?.agentName||"metis";
+  const agentEsc=()=>esc(agentName());
   const upsert=c=>{const i=b.commits.findIndex(x=>x.action_id===c.action_id);i<0?b.commits.push(c):b.commits[i]=c};
   function table(){
     const m=b.m?.metrics;if(!m)return"<p>Loading the account snapshot…</p>";
@@ -36,7 +38,7 @@ export function createKamBrainController({rootEl,summaryEl}){
       b.prior.map(c=>`<div class="li"><span><b>${esc(c.action_id)}</b> ${esc(c.action||c.action_summary||"")}<br><small style="color:var(--mute)">${esc(c.progress_note||c.target_metric||"")}</small></span><span>${esc(String(c.status||"").replace("_"," "))}</span></div>`).join("")+`</section>`;
   }
   function diag(){
-    if(!b.diag)return`<section class="card locked"><h2>Root-Cause Revenue Attribution</h2><p>Riya fills this in after she checks your orders, stock and prices.</p></section>`;
+    if(!b.diag)return`<section class="card locked"><h2>Root-Cause Revenue Attribution</h2><p>${agentEsc()} fills this in after checking your orders, stock and prices.</p></section>`;
     const col=["var(--loss)","var(--gold)","var(--blue)"],d=b.diag.drivers||[];
     return`<section class="card"><h2>Root-Cause Revenue Attribution<span class="chip ok">Live Diagnosis Verified</span></h2>
       <div class="bar">${d.map((x,i)=>`<i style="width:${x.share_pct}%;background:${col[i]||"var(--mute)"}"></i>`).join("")}</div>
@@ -50,7 +52,7 @@ export function createKamBrainController({rootEl,summaryEl}){
       <div><h2>Priced above competitors</h2>${p.map(x=>`<div class="li"><span>${esc(x.sku_id)} ${esc(x.name)}</span><span>${inr(x.seller_price)} vs ${inr(x.competitor_lowest_price)}</span></div>`).join("")||"<p>None checked yet.</p>"}</div></section>`;
   }
   function plan(){
-    if(!b.plan)return`<section class="card locked"><h2>Prioritised Recovery Plan</h2><p>Riya proposes actions once the diagnosis is done, then asks you to commit.</p></section>`;
+    if(!b.plan)return`<section class="card locked"><h2>Prioritised Recovery Plan</h2><p>${agentEsc()} proposes actions once the diagnosis is done, then asks you to commit.</p></section>`;
     return`<section class="card"><h2>Prioritised Recovery Plan<span class="chip">${b.commits.length} committed</span></h2><div class="acts">${(b.plan.actions||[]).map(a=>{
       const c=b.commits.find(x=>x.action_id===a.action_id);
       return`<div class="act ${c?"done":""}"><span class="st ${c?"pos":""}">${c?"Committed, due "+esc(c.due_date):"Due "+esc(a.recommended_due)}</span><b>${esc(a.title)}</b><span>${esc(a.details)}</span><span class="rec">Indicative recovery ${esc(a.estimated_recovery_range_rs)}</span></div>`}).join("")}</div>
@@ -58,7 +60,7 @@ export function createKamBrainController({rootEl,summaryEl}){
   }
   function trail(){
     const f=b.fail;
-    return`<section class="card"><h2>What Riya checked</h2><div class="chips"><span class="chip">Model ${esc(b.prov)}</span>
+    return`<section class="card"><h2>What ${agentEsc()} checked</h2><div class="chips"><span class="chip">Model ${esc(b.prov)}</span>
       <span class="chip ${b.bad?"bad":"ok"}">${b.bad?`${b.bad} numbers not verified`:"Every number verified"}</span>
       ${f?`<span class="chip warn">Switched models: ${esc(f.from)} ${FAIL[f.reason_code]||"failed"}</span>`:""}</div>
       <div class="trail">${b.tools.slice(-8).map(t=>`<div class="t"><span><code>${esc(t.name)}</code> ${esc(t.s||"")}</span><span>${t.ms==null?"running…":t.ms+" ms"}</span></div>`).join("")||"Nothing yet. Tool calls show up here live."}</div></section>`;
@@ -73,7 +75,7 @@ export function createKamBrainController({rootEl,summaryEl}){
       <p style="margin-top:12px">Mock WhatsApp / SMS dispatch</p><pre id="whatsappPreview">${esc(d.whatsapp_text)}</pre>
       <div class="row"><button id="btnCopyWhatsapp" class="btn sm" type="button">Copy message</button><button id="btnDownloadSummary" class="btn sm" type="button">Download .txt</button></div></section>`;
     summaryEl.querySelector("#btnCopyWhatsapp").onclick=e=>navigator.clipboard?.writeText(d.whatsapp_text).then(()=>e.target.textContent="Copied");
-    summaryEl.querySelector("#btnDownloadSummary").onclick=()=>{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([d.whatsapp_text],{type:"text/plain"}));a.download="riya-call-summary.txt";a.click()};
+    summaryEl.querySelector("#btnDownloadSummary").onclick=()=>{const slug=agentName().toLowerCase().replace(/[^a-z0-9_-]+/g,"-")||"kam";const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([d.whatsapp_text],{type:"text/plain"}));a.download=`${slug}-call-summary.txt`;a.click()};
     summaryEl.scrollIntoView({behavior:"smooth",block:"nearest"});
   }
   render();

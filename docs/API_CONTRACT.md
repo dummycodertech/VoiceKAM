@@ -1,4 +1,4 @@
-# Snapdeal Virtual KAM ("Riya") — Backend API & SSE Contract (`v1`)
+# VoiceKAM ("metis") — Backend API & SSE Contract (`v1`)
 
 - **Contract Version:** `v1` (post-handoff stabilized baseline)
 - **Runtime Requirement:** Single-worker FastAPI + Uvicorn (`--workers 1`) due to in-memory `SessionStore`, `LLMRouter` cooldown/disablement tables, and `TTSService` LRU cache.
@@ -14,7 +14,7 @@
 | `GET` | `/` | — | `frontend/index.html` (`FileResponse`) or `{"status":"ok","message":...}` |
 | `GET` | `/static/{path}` | Path under `frontend/` | Static asset (`200`) or `404` |
 | `GET` | `/favicon.ico` | — | `204 No Content` |
-| `GET` | `/api/health` | — | `{status, prototype_notice, providers_configured, active_llm_chain, disabled_providers, llm_startup_smoke, tts_config, features}` |
+| `GET` | `/api/health` | — | `{status, prototype_notice, branding, providers_configured, active_llm_chain, disabled_providers, llm_startup_smoke, tts_config, features}` |
 | `GET` | `/api/demo-data` | `?snapshot=current\|followup` (default `"current"`) | `{overview, metrics, diagnosis, oos_skus, cancellations, pricing, funnel, action_plan}` |
 | `GET` | `/api/tts-probe` | `?text=...&language=en-IN\|hi-IN\|hinglish` | `{edge_tts_ok, voice, latency_ms, recommended_tts_mode, ...}` |
 

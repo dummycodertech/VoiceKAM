@@ -1,4 +1,4 @@
-"""Exact reconciliation tests for the 60-SKU Kumar Home & Kitchen dataset."""
+"""Exact reconciliation tests for the 60-SKU seed dataset."""
 
 from app.data.seed_data import (
     CANCELLATION_BREAKDOWN,

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Riya, Snapdeal Virtual KAM</title>
+<title>VoiceKAM</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='9' fill='%23151416'/><circle cx='16' cy='16' r='7' fill='%23a37c95'/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -11,8 +11,8 @@
 </head>
 <body data-completed-streams="0">
 <header class="top">
-  <div class="brand"><span class="mark" aria-hidden="true"></span><b>Riya</b><span class="sub">Snapdeal Virtual KAM for Kumar Home &amp; Kitchen</span></div>
-  <div class="badges"><span id="ttsBadge" class="chip">TTS: Auto</span><span class="chip warn">Prototype: mock data only</span></div>
+  <div class="brand"><span class="mark" aria-hidden="true"></span><b id="brandName">VoiceKAM</b><span id="brandSub" class="sub">Virtual Key Account Manager</span></div>
+  <div class="badges"><span id="ttsBadge" class="chip">TTS: Auto</span><span class="chip warn">Prototype: synthetic data only</span></div>
   <nav id="phaseStrip" class="phases" aria-label="Call progress">
     <span class="phase-pill active" data-phase="GREETING">Greeting</span>
     <span class="phase-pill" data-phase="UNDERSTAND">Understand</span>
@@ -31,7 +31,7 @@
   <section class="call" aria-label="Call">
     <div class="stage">
       <div class="stage-head"><span class="live"><i></i>Voice session</span><span class="hint">Space to interrupt</span></div>
-      <div class="meta"><span id="callTimer" class="timer">00:00</span><p id="orbLabel">Press Start call to talk with Riya</p></div>
+            <div class="meta"><span id="callTimer" class="timer">00:00</span><p id="orbLabel">Press Start call to begin</p></div>
       <canvas id="spectrum" class="spectrum" aria-hidden="true"></canvas>
       <div class="orbwrap"><button id="micOrb" class="orb" data-state="idle" type="button" aria-label="Microphone">Ready</button></div>
       <div class="actions">
@@ -47,11 +47,11 @@
     </div>
     <section class="panel" aria-label="Transcript">
       <div class="panel-head"><h3>Transcript</h3></div>
-      <div id="captionsBox" class="captions" aria-live="polite"><div class="captions-empty">Captions appear here as you and Riya talk.</div></div>
+            <div id="captionsBox" class="captions" aria-live="polite"><div class="captions-empty">Captions appear here during the call.</div></div>
     </section>
     <section class="panel settings" aria-label="Session settings">
       <div class="panel-head"><h3>Session</h3></div>
-      <label>Call type<select id="selMode"><option value="inbound">Seller calls Riya</option><option value="proactive">Riya calls seller</option><option value="followup">3-day follow-up</option></select></label>
+      <label>Call type<select id="selMode"><option value="inbound">Seller calls assistant</option><option value="proactive">Assistant calls seller</option><option value="followup">3-day follow-up</option></select></label>
       <div class="pair">
         <label>Language<select id="selLanguage"><option value="en-IN">English (India)</option><option value="hinglish">Hinglish</option><option value="hi-IN">Hindi</option></select></label>
         <label>Voice<select id="selTtsProvider"><option value="auto">Auto</option><option value="edge-tts">Neural</option><option value="browser">Browser</option></select></label>
@@ -61,11 +61,12 @@
       <div id="debugBox" class="row hidden"><input id="txtDebugInput" type="text" placeholder="Type what the seller says, then Enter" autocomplete="off"><button id="btnSendDebug" class="btn primary sm" type="button">Send</button></div>
     </section>
   </section>
-  <section class="file" aria-label="Riya's case file">
+  <section id="caseFileSection" class="file" aria-label="KAM Brain case file">
     <div id="kamBrainRoot"></div>
     <div id="summaryCardSection" class="hidden"></div>
   </section>
 </main>
+<footer class="foot" id="footerNotice">Prototype. Uses synthetic data. Not affiliated with any marketplace.</footer>
 <script type="module" src="/static/app.js"></script>
 </body>
 </html>

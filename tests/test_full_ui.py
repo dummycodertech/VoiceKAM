@@ -139,7 +139,7 @@ def test_m6_m7_kam_brain_proactive_summary_and_followup():
             summary_text = page.inner_text("#summaryCardSection")
             assert "Call Summary & Mock WhatsApp Recap" in summary_text
             assert "mock whatsapp / sms dispatch" in summary_text.lower()
-            assert "Kumar Home & Kitchen" in summary_text
+            assert "Metro Home & Kitchen" in summary_text
             assert "ACT-1" in summary_text
 
             page.wait_for_timeout(400)
@@ -162,7 +162,7 @@ def test_m6_m7_kam_brain_proactive_summary_and_followup():
             assert "1,75,500" in fu_brain
 
             # Drive 1 follow-up turn -> REVIEW_COMMITMENTS
-            _send_debug(page, "Hi Riya, yes I restocked most items. How do my numbers look now?")
+            _send_debug(page, "Hi metis, yes I restocked most items. How do my numbers look now?")
             page.wait_for_timeout(800)
             page.screenshot(path=str(SCRATCH_DIR / "m7_followup_call.png"), full_page=True)
 

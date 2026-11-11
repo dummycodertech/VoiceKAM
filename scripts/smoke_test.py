@@ -2,7 +2,7 @@
 
 Usage:
     python scripts/smoke_test.py
-    python scripts/smoke_test.py --url https://snapdeal-virtual-kam.onrender.com
+    python scripts/smoke_test.py --url https://voicekam-virtual-kam.onrender.com
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ def _parse_sse(text: str) -> list[tuple[str, dict]]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Smoke test Snapdeal Virtual KAM deployment.")
+    parser = argparse.ArgumentParser(description="Smoke test VoiceKAM deployment.")
     parser.add_argument("--url", default="http://127.0.0.1:7860", help="Base URL of running service")
     parser.add_argument("--timeout", type=float, default=60.0, help="HTTP timeout (higher for Render cold start)")
     args = parser.parse_args()
@@ -60,7 +60,7 @@ def main() -> int:
             print(f"  edge-tts probe error: {probe.get('error_type')}: {probe.get('error')}")
 
         print(f"[3/5] Checking {base}/api/tts ...")
-        rt = client.post(f"{base}/api/tts", json={"text": "Namaste Rajesh ji, your sales dropped 32.5%.", "language": "en-IN"})
+        rt = client.post(f"{base}/api/tts", json={"text": "Namaste, I am metis, checking your sales data.", "language": "en-IN"})
         rt.raise_for_status()
         ct = rt.headers.get("content-type", "")
         print(f"  TTS Content-Type={ct} | X-TTS-Provider={rt.headers.get('x-tts-provider', 'json-fallback')} | size={len(rt.content)} bytes")

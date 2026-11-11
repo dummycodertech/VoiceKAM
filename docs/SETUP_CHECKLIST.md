@@ -10,7 +10,7 @@
 
 ### A. Groq API Key (`GROQ_API_KEY`) — Primary LLM + Whisper STT Fallback
 1. Sign in at **https://console.groq.com** (Google or GitHub login).
-2. Open **https://console.groq.com/keys** -> **Create API Key** -> name it `snapdeal-kam`.
+2. Open **https://console.groq.com/keys** -> **Create API Key** -> name it `voicekam`.
 3. Copy `gsk_...`:
    - **Local:** `.env` -> `GROQ_API_KEY=gsk_...`
    - **Render:** Dashboard -> Service -> **Environment** -> `GROQ_API_KEY`
@@ -46,11 +46,11 @@
 ## 3. Cloud Public URL: GitHub Repo -> Render Free Web Service ($0/mo, Zero Card)
 
 1. **Create a GitHub repository:**
-   - Open **https://github.com/new**, name it `snapdeal-virtual-kam`, leave Public or Private, click **Create repository**.
+   - Open **https://github.com/new**, name it `voicekam`, leave Public or Private, click **Create repository**.
    - Push this repo (`git push -u origin main`). Confirm `.env` is ignored and NOT listed in `git status`.
 2. **Deploy on Render:**
    - Go to **https://dashboard.render.com** and sign in with GitHub (**no credit card required for Hobby/Free plan**).
-   - Click **New + -> Blueprint** (recommended — uses `render.yaml`) or **Web Service**, and select your `snapdeal-virtual-kam` GitHub repository.
+   - Click **New + -> Blueprint** (recommended — uses `render.yaml`) or **Web Service**, and select your `voicekam` GitHub repository.
    - Verify **Instance Type** is **Free ($0 / month)** and Region is **Singapore**.
    - Under **Environment Variables**, enter values for `GROQ_API_KEY` and `GEMINI_API_KEY` (and optional `OPENROUTER_API_KEY`).
    - Click **Deploy**. Render builds the Python 3.12 runtime and gives you `https://<your-service>.onrender.com`.

@@ -23,7 +23,7 @@ $ServerProc = $null
 $TunnelProc = $null
 
 try {
-    Write-Host "Starting Snapdeal Virtual KAM backend on http://127.0.0.1:$Port ..." -ForegroundColor Cyan
+    Write-Host "Starting VoiceKAM backend on http://127.0.0.1:$Port ..." -ForegroundColor Cyan
     $ServerProc = Start-Process -FilePath $PythonExe `
         -ArgumentList @("-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "$Port", "--workers", "1") `
         -PassThru -NoNewWindow

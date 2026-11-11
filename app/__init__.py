@@ -1,2 +1,2 @@
-"""Snapdeal Virtual KAM backend package."""
+"""VoiceKAM virtual Key Account Manager backend package."""
 

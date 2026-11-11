@@ -7,7 +7,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator
 
-from app.config import Settings
+from app.config import AGENT_NAME, Settings
 from app.engine.tools import TOOL_SCHEMAS
 from app.llm.base import (
     AllProvidersUnavailableError,
@@ -129,8 +129,8 @@ class LLMRouter:
 
         smoke_tools = [t for t in TOOL_SCHEMAS if t["function"]["name"] == "get_seller_overview"]
         smoke_messages = [
-            CanonicalMessage(role="system", content="You are Riya. Call get_seller_overview once."),
-            CanonicalMessage(role="user", content="Check Rajesh Kumar's seller overview."),
+            CanonicalMessage(role="system", content=f"You are {AGENT_NAME}. Call get_seller_overview once."),
+            CanonicalMessage(role="user", content="Check the seller overview."),
         ]
 
         seen_provider_families: set[str] = set()

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from app.config import PROJECT_NAME
 from app.llm.openai_compat import OpenAICompatProvider
 
 
@@ -20,7 +21,7 @@ class OpenRouterProvider(OpenAICompatProvider):
             timeout_seconds=timeout_seconds,
             reasoning_effort="low",
             extra_headers={
-                "HTTP-Referer": "https://snapdeal-virtual-kam.local",
-                "X-Title": "Snapdeal Virtual KAM Prototype",
+                "HTTP-Referer": "https://localhost",
+                "X-Title": f"{PROJECT_NAME} Virtual KAM Prototype",
             },
         )

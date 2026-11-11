@@ -1,4 +1,4 @@
-"""FastAPI backend for Snapdeal Virtual KAM (single-service API + static frontend)."""
+"""FastAPI backend for VoiceKAM (single-service API + static frontend)."""
 
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from app.agent.orchestrator import AgentOrchestrator
 from app.agent.session import CallMode, LanguageCode, SessionStore
 from app.config import Settings, get_settings
+from app.data.seed_data import SELLER_PROFILE
 from app.engine import diagnosis
 from app.llm.base import AllProvidersUnavailableError
 from app.llm.router import LLMRouter
@@ -74,17 +75,29 @@ def create_app(
             await tts_service.startup_smoke_test()
             # Pre-warm TTS cache for common greeting/filler lines (best effort)
             if settings.tts_cache_enabled:
-                for txt, lang in [
-                    ("Namaste Rajesh ji, I am Riya, your Snapdeal account manager. How can I help Kumar Home and Kitchen today?", "en-IN"),
-                    ("Ji, ek second, main aapka data dekh rahi hoon.", "hinglish"),
-                ]:
+                warmup_lines = [
+                    (
+                        f"Namaste {SELLER_PROFILE['salutation']}, I am {settings.agent_name}, "
+                        f"your marketplace account manager. How can I help {SELLER_PROFILE['shop_name']} today?",
+                        "en-IN",
+                    ),
+                    (
+                        f"Ji {SELLER_PROFILE['salutation']}, main {settings.agent_name} bol rahi hoon, ek second aapka data check karti hoon.",
+                        "hinglish",
+                    ),
+                    (
+                        f"नमस्ते {SELLER_PROFILE['salutation']}, मैं {settings.agent_name_devanagari} बोल रही हूँ, एक सेकंड आपका डेटा देख रही हूँ।",
+                        "hi-IN",
+                    ),
+                ]
+                for txt, lang in warmup_lines:
                     try:
                         await tts_service.synthesize(txt, language=lang)
                     except Exception:
                         pass
         yield
 
-    app = FastAPI(title="Snapdeal Virtual KAM (Prototype - Mock Data)", lifespan=lifespan)
+    app = FastAPI(title=f"{settings.project_name} (Prototype - Mock Data)", lifespan=lifespan)
     app.state.settings = settings
     app.state.store = store
     app.state.router = router
@@ -116,7 +129,8 @@ def create_app(
     async def health() -> dict[str, Any]:
         return {
             "status": "ok",
-            "prototype_notice": "Prototype - Mock Data Only",
+            "prototype_notice": settings.footer_notice,
+            "branding": settings.branding_dict(),
             "providers_configured": {
                 "groq": bool(settings.groq_api_key.strip()),
                 "gemini": bool(settings.gemini_api_key.strip()),
@@ -249,16 +263,17 @@ def create_app(
 
     @app.get("/api/tts-probe")
     async def tts_probe_endpoint(
-        text: str = "Namaste Rajesh ji, testing neural voice output.",
+        text: str | None = None,
         language: LanguageCode = "en-IN",
     ) -> dict[str, Any]:
-        """Diagnostic probe to verify whether edge-tts works from current host IPs (e.g. Render)."""
+        """Diagnostic probe to verify whether edge-tts works from current host IPs."""
         import time
 
+        probe_text = text or f"Namaste, I am {settings.agent_name}, testing neural voice output."
         voice = tts_service.voice_for_language(language)
         t0 = time.perf_counter()
         try:
-            mp3_bytes = await tts_service._synthesize_edge_tts(text, voice=voice, timeout_seconds=8.0)
+            mp3_bytes = await tts_service._synthesize_edge_tts(probe_text, voice=voice, timeout_seconds=8.0)
             return {
                 "edge_tts_ok": True,
                 "voice": voice,

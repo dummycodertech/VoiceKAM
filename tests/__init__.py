@@ -1,2 +1,2 @@
-"""Test suite for Snapdeal Virtual KAM."""
+"""Test suite for VoiceKAM."""
 

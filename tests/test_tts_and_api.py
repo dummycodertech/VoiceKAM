@@ -115,10 +115,10 @@ async def test_tts_cache_and_browser_fallback_when_providers_fail(monkeypatch):
 
     monkeypatch.setattr(svc, "_synthesize_edge_tts", fake_edge)
 
-    audio1, meta1 = await svc.synthesize("Namaste Rajesh ji.", language="en-IN")
+    audio1, meta1 = await svc.synthesize("Namaste Arjun ji.", language="en-IN")
     assert audio1 is not None and meta1["cached"] is False and calls == 1
 
-    audio2, meta2 = await svc.synthesize("Namaste Rajesh ji.", language="en-IN")
+    audio2, meta2 = await svc.synthesize("Namaste Arjun ji.", language="en-IN")
     assert audio2 is not None and meta2["cached"] is True and calls == 1  # Hit cache!
 
     # Now simulate edge-tts failure -> falls back cleanly to browser speechSynthesis
@@ -138,7 +138,7 @@ def test_tts_endpoint_returns_browser_fallback_json_cleanly():
     app = _make_test_app(tts_override=svc)
     client = TestClient(app)
 
-    r = client.post("/api/tts", json={"text": "Hello Rajesh ji", "language": "en-IN"})
+    r = client.post("/api/tts", json={"text": "Hello Arjun ji", "language": "en-IN"})
     assert r.status_code == 200
     assert r.json()["use_browser_tts"] is True
 

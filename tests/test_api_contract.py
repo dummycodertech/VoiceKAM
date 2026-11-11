@@ -101,7 +101,7 @@ class _OkProvider(LLMProvider):
         self.calls += 1
         yield LLMStreamChunk(
             type="token",
-            text="Got it, Rajesh ji. Let me check your account.",
+            text="Got it, Arjun ji. Let me check your account.",
             provider=self.provider_name,
             model=self.model_name,
         )
@@ -169,7 +169,7 @@ def test_rest_endpoints_v1_contract_shapes(monkeypatch):
         return b"ID3-CONTRACT-MP3"
 
     monkeypatch.setattr(svc, "_synthesize_edge_tts", fake_edge)
-    tts_ok = client.post("/api/tts", json={"text": "Hello Rajesh ji", "language": "en-IN"})
+    tts_ok = client.post("/api/tts", json={"text": "Hello Arjun ji", "language": "en-IN"})
     assert tts_ok.status_code == 200
     assert tts_ok.headers["content-type"].startswith("audio/mpeg")
     assert "x-tts-provider" in tts_ok.headers
@@ -178,7 +178,7 @@ def test_rest_endpoints_v1_contract_shapes(monkeypatch):
 
     tts_fb = client.post(
         "/api/tts",
-        json={"text": "Hello Rajesh ji", "language": "en-IN", "provider": "browser"},
+        json={"text": "Hello Arjun ji", "language": "en-IN", "provider": "browser"},
     )
     assert tts_fb.status_code == 200
     fb_json = tts_fb.json()

@@ -1,12 +1,12 @@
-# Data, Business Logic & Technical Assumptions (Prototype — Mock Data Only)
+# Data, Business Logic & Technical Assumptions (Prototype — Synthetic Data Only)
 
-> All figures, store records, SKUs, and conversation scenarios in this project are **100% synthetic mock data** created solely for demonstrating the **Snapdeal Virtual KAM ("Riya")** architecture. No real Snapdeal seller data, internal APIs, pricing feeds, or trademark assets are used.
+> All figures, store records, SKUs, and conversation scenarios in this project are **100% synthetic data** created solely for demonstrating the **VoiceKAM ("metis")** architecture. No real marketplace seller data, internal APIs, pricing feeds, or trademark assets are used.
 
 ---
 
 ## 1. Metric Definitions & Reconciliation
 
-- **Store Persona:** Rajesh Kumar — *Kumar Home & Kitchen* (Delhi), 60 active catalog SKUs (`HK-001` through `HK-060`).
+- **Store Persona:** Arjun Mehta — *Metro Home & Kitchen* (Delhi), 60 active catalog SKUs (`HK-001` through `HK-060`) in Phase 1 (replaced by parameterized `SellerContext` scenarios in Phase 2/3).
 - **Orders:** Placed marketplace orders in the billing period (`400` last month vs `270` this month, `-130` orders / `-32.5%`).
 - **Sales (Placed GMV):** $\sum (\text{Orders} \times \text{SKU Price})$.
   - Last month: `₹2,00,000` (`400 × ₹500` blended ASP).

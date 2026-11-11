@@ -120,7 +120,7 @@ def test_walking_skeleton_voice_ui_flow():
             page.screenshot(path=str(SCRATCH_DIR / "m5_walking_skeleton.png"), full_page=True)
 
             captions_text = page.inner_text("#captionsBox")
-            assert "Rajesh ji" in captions_text
+            assert "Arjun ji" in captions_text
             assert "sales dropped" in captions_text.lower()
             assert page.inner_text("#latencySttToToken") != "-"
             assert page.inner_text("#latencySttToAudio") != "-"
