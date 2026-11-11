@@ -1,6 +1,6 @@
 # VoiceKAM (`metis`) — 90-Second Live Walkthrough Script
 
-> **Setup before recording / presenting:** Open Google Chrome at your VoiceKAM URL (`https://<tunnel>.trycloudflare.com` via `.\run.ps1`, local `http://127.0.0.1:7860`, or Render service). Ensure **Demo Scenario** is set to **Scenario A: UrbanStride Footwear (Stock-out Dominant)**, language is **English (`en-IN`)**, and confirm **`PROTOTYPE · MOCK DATA ONLY`** is visible in the top bar.
+> **Setup before recording / presenting:** Open Google Chrome at your VoiceKAM URL (`https://<tunnel>.trycloudflare.com` via `.\run.ps1`, local `http://127.0.0.1:7860`, or Render service). Ensure **Demo Scenario** is set to **Scenario A: UrbanStride Footwear (Stock-out Dominant)** and language is **English (`en-IN`)**.
 
 ---
 

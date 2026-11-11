@@ -129,7 +129,9 @@ def test_walking_skeleton_voice_ui_flow():
             page.goto(base_url, wait_until="networkidle")
 
             # Branding & notice hydrated from /api/health
-            assert "prototype" in page.inner_text("header").lower()
+            header_text = page.inner_text("header").lower()
+            assert "prototype" not in header_text
+            assert "tts:" in header_text
             assert page.inner_text("#brandName").strip() == "VoiceKAM"
             assert "not affiliated with any marketplace" in page.inner_text("#footerNotice").lower()
             assert "UrbanStride Footwear & Apparel" in page.inner_text("#datasetSummary")

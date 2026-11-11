@@ -7,7 +7,7 @@
 ## Pre-Check
 - [ ] Start locally with tunnel (`.\run.ps1` -> `https://*.trycloudflare.com`) or direct Chrome localhost (`http://127.0.0.1:7860`), or wake Render URL (`https://<your-service>.onrender.com/api/health`).
 - [ ] Confirm Chrome shows a locked HTTPS/localhost icon and allows microphone permission when prompted.
-- [ ] Verify **`PROTOTYPE · MOCK DATA ONLY`** badge appears in top-right header.
+- [ ] Verify **`TTS: Auto`** badge appears cleanly in the top-right header.
 
 ---
 

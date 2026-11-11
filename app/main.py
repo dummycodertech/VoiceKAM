@@ -235,7 +235,7 @@ def create_app(
                         pass
         yield
 
-    app = FastAPI(title=f"{settings.project_name} (Prototype - Mock Data)", lifespan=lifespan)
+    app = FastAPI(title=f"{settings.project_name} — Virtual KAM", lifespan=lifespan)
     app.state.settings = settings
     app.state.store = store
     app.state.dataset_store = dataset_store

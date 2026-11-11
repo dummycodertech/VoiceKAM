@@ -1,6 +1,6 @@
 # VoiceKAM (`metis`) — Voice-First AI Key Account Manager
 
-> **Prototype. Uses synthetic data. Not affiliated with any marketplace.**
+> **VoiceKAM Seller Intelligence SaaS. Not affiliated with any marketplace.**
 
 **VoiceKAM** is a brand-neutral, open-source voice-first AI Key Account Manager (`metis`) for e-commerce seller retention and root-cause revenue diagnostics. Combining a deterministic server-controlled phase state machine, a counterfactual disjoint attribution engine (`stock_outs`, `pricing_gaps`, `visibility_drop`, `cancellations`, and explicit `unexplained_residual`), strict numeric grounding checks, multi-provider free-tier LLM failover, and natural Indian English / Hinglish / Hindi voice I/O, VoiceKAM runs interactive live voice calls on built-in synthetic scenarios or user-uploaded SKU CSV/JSON datasets without external paid dependencies.
 

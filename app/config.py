@@ -14,7 +14,7 @@ AGENT_NAME_DEVANAGARI = "metis"
 # Spoken TTS pronunciation overrides per language (display UI keeps AGENT_NAME / AGENT_NAME_DEVANAGARI)
 AGENT_NAME_SPOKEN_EN = AGENT_NAME
 AGENT_NAME_SPOKEN_HI = AGENT_NAME_DEVANAGARI
-FOOTER_NOTICE = "Prototype. Uses synthetic data. Not affiliated with any marketplace."
+FOOTER_NOTICE = "VoiceKAM Seller Intelligence. Not affiliated with any marketplace."
 PRIVACY_NOTICE = (
     "Do not upload real or confidential seller data; "
     "free LLM tiers may use prompts to improve their products."

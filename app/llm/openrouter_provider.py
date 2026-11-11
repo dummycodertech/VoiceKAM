@@ -22,6 +22,6 @@ class OpenRouterProvider(OpenAICompatProvider):
             reasoning_effort="low",
             extra_headers={
                 "HTTP-Referer": "https://localhost",
-                "X-Title": f"{PROJECT_NAME} Virtual KAM Prototype",
+                "X-Title": f"{PROJECT_NAME} Virtual KAM",
             },
         )
