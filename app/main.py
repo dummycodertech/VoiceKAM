@@ -22,6 +22,7 @@ from pydantic import BaseModel
 
 from app.agent.orchestrator import AgentOrchestrator
 from app.agent.session import CallMode, LanguageCode, SessionStore
+from app.agent.speakable import to_speakable_text
 from app.config import Settings, get_settings
 from app.data.context import SellerContext
 from app.data.seed_data import get_scenario_context, list_scenarios
@@ -203,7 +204,7 @@ def create_app(
     daily_turns = DailyTurnTracker()
     router = router_override or LLMRouter.from_settings(settings)
     tts_service = tts_override or TTSService(settings)
-    orchestrator = AgentOrchestrator(router=router)
+    orchestrator = AgentOrchestrator(router=router, settings=settings)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -228,7 +229,8 @@ def create_app(
                 ]
                 for txt, lang in warmup_lines:
                     try:
-                        await tts_service.synthesize(txt, language=lang)
+                        spoken_txt = to_speakable_text(txt, language=lang, settings=settings)
+                        await tts_service.synthesize(spoken_txt, language=lang)
                     except Exception:
                         pass
         yield
@@ -637,7 +639,11 @@ def create_app(
         if not ok:
             return _rate_limit_response("voice probe", retry)
 
-        probe_text = text or f"Namaste, I am {settings.agent_name}, testing neural voice output."
+        probe_text = text or to_speakable_text(
+            f"Namaste, I am {settings.agent_name}, testing neural voice output.",
+            language=language,
+            settings=settings,
+        )
         voice = tts_service.voice_for_language(language)
         t0 = time.perf_counter()
         try:

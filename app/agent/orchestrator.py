@@ -22,7 +22,7 @@ from app.agent.state_machine import (
     build_system_prompt,
     tools_for_phase,
 )
-from app.config import get_settings
+from app.config import Settings, get_settings
 from app.engine.tools import execute_tool
 from app.llm.base import CanonicalMessage, ToolCallRequest
 from app.llm.router import LLMRouter
@@ -151,8 +151,9 @@ def _compact_tool_payload(name: str, res: dict[str, Any]) -> dict[str, Any]:
 class AgentOrchestrator:
     """Runs turns with deterministic tool pre-execution, streaming SSE, and failover."""
 
-    def __init__(self, router: LLMRouter) -> None:
+    def __init__(self, router: LLMRouter, settings: Settings | None = None) -> None:
         self.router = router
+        self.settings = settings
 
     async def _run_pre_tools(
         self,
@@ -236,7 +237,7 @@ class AgentOrchestrator:
 
         if session.mode == "inbound":
             # Instant zero-LLM greeting for Inbound mode (low latency, warm persona)
-            settings = get_settings()
+            settings = self.settings or get_settings()
             salutation = session.seller_context.profile.salutation
             shop_name = session.seller_context.profile.shop_name
             if session.language == "hi-IN":
@@ -261,10 +262,28 @@ class AgentOrchestrator:
                 "sentence",
                 {
                     "text": greeting,
-                    "speakable": to_speakable_text(greeting, session.language, seller_context=session.seller_context),
+                    "speakable": to_speakable_text(
+                        greeting,
+                        session.language,
+                        seller_context=session.seller_context,
+                        settings=settings,
+                    ),
                 },
             )
-            yield _sse("done", {"text": greeting, "phase": session.phase.value, "provider": "template"})
+            yield _sse(
+                "done",
+                {
+                    "text": greeting,
+                    "speakable": to_speakable_text(
+                        greeting,
+                        session.language,
+                        seller_context=session.seller_context,
+                        settings=settings,
+                    ),
+                    "phase": session.phase.value,
+                    "provider": "template",
+                },
+            )
             return
 
         # Proactive or Follow-up mode: pre-execute overview/metrics & stream LLM opening
@@ -306,7 +325,7 @@ class AgentOrchestrator:
 
         # Keep recent history compact (last ~10 non-system messages) without breaking tool sequences
         recent_history = slice_recent_messages(session.messages, max_count=10)
-        sys_prompt = build_system_prompt(session, precomputed_context=pre_ctx)
+        sys_prompt = build_system_prompt(session, precomputed_context=pre_ctx, settings=self.settings)
         working_messages = [CanonicalMessage(role="system", content=sys_prompt), *recent_history]
         phase_tools = tools_for_phase(session.phase)
 
@@ -354,7 +373,12 @@ class AgentOrchestrator:
                                 "sentence",
                                 {
                                     "text": sent,
-                                    "speakable": to_speakable_text(sent, session.language, seller_context=session.seller_context),
+                                    "speakable": to_speakable_text(
+                                        sent,
+                                        session.language,
+                                        seller_context=session.seller_context,
+                                        settings=self.settings,
+                                    ),
                                 },
                             )
 
@@ -368,7 +392,12 @@ class AgentOrchestrator:
                     "sentence",
                     {
                         "text": rem,
-                        "speakable": to_speakable_text(rem, session.language, seller_context=session.seller_context),
+                        "speakable": to_speakable_text(
+                            rem,
+                            session.language,
+                            seller_context=session.seller_context,
+                            settings=self.settings,
+                        ),
                     },
                 )
 
@@ -458,7 +487,12 @@ class AgentOrchestrator:
                 "sentence",
                 {
                     "text": cleaned_reply,
-                    "speakable": to_speakable_text(cleaned_reply, session.language, seller_context=session.seller_context),
+                    "speakable": to_speakable_text(
+                        cleaned_reply,
+                        session.language,
+                        seller_context=session.seller_context,
+                        settings=self.settings,
+                    ),
                 },
             )
         ungrounded = find_ungrounded_numbers(
@@ -502,7 +536,12 @@ class AgentOrchestrator:
             "done",
             {
                 "text": cleaned_reply,
-                "speakable": to_speakable_text(cleaned_reply, session.language, seller_context=session.seller_context),
+                "speakable": to_speakable_text(
+                    cleaned_reply,
+                    session.language,
+                    seller_context=session.seller_context,
+                    settings=self.settings,
+                ),
                 "phase": session.phase.value,
                 "provider": provider_used,
                 "commitments": session.commitments,

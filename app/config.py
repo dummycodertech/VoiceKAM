@@ -11,6 +11,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 PROJECT_NAME = "VoiceKAM"
 AGENT_NAME = "metis"
 AGENT_NAME_DEVANAGARI = "metis"
+# Spoken TTS pronunciation overrides per language (display UI keeps AGENT_NAME / AGENT_NAME_DEVANAGARI)
+AGENT_NAME_SPOKEN_EN = AGENT_NAME
+AGENT_NAME_SPOKEN_HI = AGENT_NAME_DEVANAGARI
 FOOTER_NOTICE = "Prototype. Uses synthetic data. Not affiliated with any marketplace."
 PRIVACY_NOTICE = (
     "Do not upload real or confidential seller data; "
@@ -29,6 +32,8 @@ class Settings(BaseSettings):
     project_name: str = PROJECT_NAME
     agent_name: str = AGENT_NAME
     agent_name_devanagari: str = AGENT_NAME_DEVANAGARI
+    agent_name_spoken_en: str = AGENT_NAME_SPOKEN_EN
+    agent_name_spoken_hi: str = AGENT_NAME_SPOKEN_HI
     footer_notice: str = FOOTER_NOTICE
     privacy_notice: str = PRIVACY_NOTICE
 
@@ -90,11 +95,23 @@ class Settings(BaseSettings):
     def gemini_model_list(self) -> list[str]:
         return [m.strip() for m in self.gemini_models.split(",") if m.strip()]
 
+    def spoken_agent_name(self, language: str = "en-IN") -> str:
+        """Return configurable spoken TTS pronunciation for the persona name without changing UI text."""
+        if language == "hi-IN":
+            if "agent_name_spoken_hi" in self.model_fields_set or self.agent_name_spoken_hi != AGENT_NAME_SPOKEN_HI:
+                return self.agent_name_spoken_hi.strip() or self.agent_name_devanagari
+            return self.agent_name_devanagari
+        if "agent_name_spoken_en" in self.model_fields_set or self.agent_name_spoken_en != AGENT_NAME_SPOKEN_EN:
+            return self.agent_name_spoken_en.strip() or self.agent_name
+        return self.agent_name
+
     def branding_dict(self) -> dict[str, str]:
         return {
             "project_name": self.project_name,
             "agent_name": self.agent_name,
             "agent_name_devanagari": self.agent_name_devanagari,
+            "agent_name_spoken_en": self.spoken_agent_name("en-IN"),
+            "agent_name_spoken_hi": self.spoken_agent_name("hi-IN"),
             "footer_notice": self.footer_notice,
             "privacy_notice": self.privacy_notice,
         }

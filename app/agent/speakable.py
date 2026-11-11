@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any, Iterable
 
+from app.config import Settings, get_settings
+
 if TYPE_CHECKING:
     from app.data.context import SellerContext
 
@@ -161,6 +163,7 @@ def to_speakable_text(
     text: str,
     language: str = "en-IN",
     seller_context: SellerContext | None = None,
+    settings: Settings | None = None,
 ) -> str:
     """Normalize caption text into natural TTS-ready speech in en-IN, hinglish, or hi-IN."""
     s = strip_reasoning_and_markdown(text)
@@ -225,6 +228,23 @@ def to_speakable_text(
 
     s = s.replace("<=", "कम से कम " if False else ("अधिकतम " if language == "hi-IN" else "at most "))
     s = s.replace(">=", "न्यूनतम " if language == "hi-IN" else "at least ")
+
+    cfg = settings or get_settings()
+    spoken_name = cfg.spoken_agent_name(language)
+    if spoken_name:
+        display_candidates = sorted(
+            {c.strip() for c in (cfg.agent_name, cfg.agent_name_devanagari) if c and c.strip()},
+            key=len,
+            reverse=True,
+        )
+        for display_name in display_candidates:
+            if display_name != spoken_name:
+                pattern = re.compile(
+                    rf"(?<![A-Za-z0-9_\u0900-\u097F]){re.escape(display_name)}(?![A-Za-z0-9_\u0900-\u097F])",
+                    re.IGNORECASE,
+                )
+                s = pattern.sub(lambda _m, rep=spoken_name: rep, s)
+
     s = re.sub(r"\s+", " ", s).strip()
     return s
 

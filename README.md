@@ -88,6 +88,8 @@ All settings load via `app/config.py` (`Settings` / `.env`):
 | `PROJECT_NAME` | `VoiceKAM` | Project title returned by `/api/health` and hydrated across UI |
 | `AGENT_NAME` | `metis` | Persona name used in prompts, greetings, warmups, and UI |
 | `AGENT_NAME_DEVANAGARI` | `metis` | Agent spelling rendered in `hi-IN` prompts and greetings |
+| `AGENT_NAME_SPOKEN_EN` | `metis` | Optional TTS-only pronunciation for `en-IN`/`hinglish` without changing UI text |
+| `AGENT_NAME_SPOKEN_HI` | `metis` | Optional TTS-only pronunciation for `hi-IN` without changing UI text |
 | `GROQ_API_KEY` | `""` | Primary free-tier Groq key (LLM + optional `/api/stt` Whisper) |
 | `GROQ_MODELS` | `openai/gpt-oss-20b,openai/gpt-oss-120b,qwen/qwen3.6-27b,qwen/qwen3.8-27b` | Ordered Groq model chain filtered live via `/models` |
 | `GROQ_REASONING_EFFORT` | `low` | Reasoning effort parameter passed to Groq reasoning models |

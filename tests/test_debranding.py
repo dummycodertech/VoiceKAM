@@ -5,7 +5,15 @@ from __future__ import annotations
 import pathlib
 import re
 
-from app.config import AGENT_NAME, AGENT_NAME_DEVANAGARI, FOOTER_NOTICE, PROJECT_NAME, Settings
+from app.config import (
+    AGENT_NAME,
+    AGENT_NAME_DEVANAGARI,
+    AGENT_NAME_SPOKEN_EN,
+    AGENT_NAME_SPOKEN_HI,
+    FOOTER_NOTICE,
+    PROJECT_NAME,
+    Settings,
+)
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
@@ -90,9 +98,13 @@ def test_central_branding_config_single_source_of_truth():
     assert s.project_name == PROJECT_NAME == "VoiceKAM"
     assert s.agent_name == AGENT_NAME == "metis"
     assert s.agent_name_devanagari == AGENT_NAME_DEVANAGARI == "metis"
+    assert s.agent_name_spoken_en == AGENT_NAME_SPOKEN_EN == "metis"
+    assert s.agent_name_spoken_hi == AGENT_NAME_SPOKEN_HI == "metis"
     assert s.footer_notice == FOOTER_NOTICE
     branding = s.branding_dict()
     assert branding["project_name"] == s.project_name
     assert branding["agent_name"] == s.agent_name
     assert branding["agent_name_devanagari"] == s.agent_name_devanagari
+    assert branding["agent_name_spoken_en"] == s.spoken_agent_name("en-IN")
+    assert branding["agent_name_spoken_hi"] == s.spoken_agent_name("hi-IN")
     assert "not affiliated with any marketplace" in branding["footer_notice"].lower()

@@ -7,7 +7,7 @@ import re
 from typing import Any
 
 from app.agent.session import Phase, SessionState
-from app.config import get_settings
+from app.config import Settings, get_settings
 from app.engine import diagnosis
 from app.engine.tools import TOOL_SCHEMAS
 
@@ -271,9 +271,10 @@ def _phase_instruction(
 def build_system_prompt(
     session: SessionState,
     precomputed_context: dict[str, Any] | None = None,
+    settings: Settings | None = None,
 ) -> str:
     """Build a compact system prompt parameterized cleanly by session.seller_context."""
-    settings = get_settings()
+    settings = settings or get_settings()
     ctx = session.seller_context
     profile = ctx.profile
     headline = diagnosis.compute_headline_metrics(ctx, session.snapshot)
