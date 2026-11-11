@@ -176,17 +176,73 @@ def _derive_default_issues(ctx: SellerContext, snapshot: str) -> list[str]:
         )
     else:
         issues.append(
-            f"Sales moved {sales_pct}% ({format_inr(sales_prev)} -> {format_inr(sales_curr)}); ASP is {format_inr(asp_curr)}."
+            f"Sales moved {sales_pct}% ({format_inr(sales_prev)} -> {format_inr(sales_curr)}). {headline['volume_vs_price_finding']}"
         )
 
-    top_assessed = [d for d in diag.get("drivers", []) if d.get("assessable") and d.get("lost_orders", 0) > 0]
-    for d in top_assessed[:2]:
+    assessed_drivers = [
+        d
+        for d in diag.get("drivers", [])
+        if d.get("assessable") and d.get("driver") != "unexplained_residual" and d.get("lost_orders", 0) > 0
+    ]
+    for d in assessed_drivers:
         issues.append(f"{d['title']} accounted for {d['share_pct']}% ({d['lost_orders']} orders): {d['evidence']}")
 
     missing = diag.get("missing_signals") or []
     if missing:
-        issues.append("Some columns were missing (" + "; ".join(missing[:2]) + ").")
-    return issues[:3]
+        issues.append("Some columns were not assessable with the data provided (" + "; ".join(missing[:2]) + ").")
+    return issues
+
+
+def _partition_action_statuses(session: SessionState) -> dict[str, list[dict[str, Any]]]:
+    """Partition action_statuses into agreed, tentative, declined, and not_discussed lists."""
+    buckets: dict[str, list[dict[str, Any]]] = {
+        "agreed": [],
+        "tentative": [],
+        "declined": [],
+        "not_discussed": [],
+    }
+    seen_ids: set[str] = set()
+
+    # Always derive agreed strictly from confirmed session.commitments (never full plan fallback)
+    for c in session.commitments:
+        aid = str(c.get("action_id") or "")
+        seen_ids.add(aid)
+        buckets["agreed"].append(
+            {
+                "action_id": aid,
+                "action_summary": normalize_indian_grouping(str(c.get("action_summary", ""))),
+                "owner": c.get("owner", ""),
+                "due_date": c.get("due_date", ""),
+                "target_metric": normalize_indian_grouping(str(c.get("target_metric", ""))),
+                "status": "agreed",
+            }
+        )
+
+    statuses = getattr(session, "action_statuses", None) or {}
+    ordered_items = getattr(session, "action_plan_items", None) or []
+    ordered_ids = [str(a.get("action_id") or "") for a in ordered_items]
+    for aid in ordered_ids + [k for k in statuses.keys() if k not in ordered_ids]:
+        if not aid or aid in seen_ids:
+            continue
+        info = statuses.get(aid) or {}
+        st = str(info.get("status") or "not_discussed").lower()
+        if st in ("agreed", "committed"):
+            continue
+        entry = {
+            "action_id": aid,
+            "action_summary": normalize_indian_grouping(str(info.get("action_summary") or info.get("title") or aid)),
+            "owner": info.get("owner", ""),
+            "due_date": info.get("due_date", ""),
+            "target_metric": normalize_indian_grouping(str(info.get("target_metric", ""))),
+            "status": "not_discussed" if st == "pending" else st,
+        }
+        seen_ids.add(aid)
+        if entry["status"] in buckets:
+            buckets[entry["status"]].append(entry)
+        else:
+            buckets["not_discussed"].append(entry)
+
+    return buckets
 
 
 def _format_whatsapp_summary(session: SessionState, ctx: SellerContext, key_issues: list[str]) -> str:
@@ -200,6 +256,8 @@ def _format_whatsapp_summary(session: SessionState, ctx: SellerContext, key_issu
     )
     anchor_dt = anchor_now_ist(getattr(session, "anchor_date_ist", None))
     default_fu_date = compute_followup_date_ist(offset_days=3, anchor=anchor_dt)
+    buckets = _partition_action_statuses(session)
+
     lines = [
         header,
         f"Seller: {seller_name} ({shop_name})",
@@ -211,14 +269,36 @@ def _format_whatsapp_summary(session: SessionState, ctx: SellerContext, key_issu
         lines.append(f"- {issue}")
 
     lines.append("")
-    lines.append("*Agreed Action Plan:*")
-    if session.commitments:
-        for idx, c in enumerate(session.commitments, 1):
+    lines.append("*Agreed actions:*")
+    if buckets["agreed"]:
+        for idx, c in enumerate(buckets["agreed"], 1):
             lines.append(f"{idx}. {c['action_summary']} | Owner: {c['owner']} | Due: {c['due_date']}")
     else:
-        plan = diagnosis.build_action_plan(ctx, session.snapshot, anchor_dt=anchor_dt)
-        for idx, a in enumerate(plan["actions"], 1):
-            lines.append(f"{idx}. {a['title']} | Owner: {a['owner']} | Target: {a['recommended_due']}")
+        lines.append("None")
+
+    lines.append("")
+    lines.append("*Tentative:*")
+    if buckets["tentative"]:
+        for idx, t in enumerate(buckets["tentative"], 1):
+            lines.append(f"{idx}. {t['action_summary']} | Proposed Due: {t['due_date']}")
+    else:
+        lines.append("None")
+
+    lines.append("")
+    lines.append("*Declined or not agreed:*")
+    if buckets["declined"]:
+        for idx, d in enumerate(buckets["declined"], 1):
+            lines.append(f"{idx}. {d['action_summary']}")
+    else:
+        lines.append("None")
+
+    lines.append("")
+    lines.append("*Not discussed:*")
+    if buckets["not_discussed"]:
+        for idx, nd in enumerate(buckets["not_discussed"], 1):
+            lines.append(f"{idx}. {nd['action_summary']}")
+    else:
+        lines.append("None")
 
     lines.append("")
     if session.followup_schedule:
@@ -276,6 +356,39 @@ def execute_tool(
         action_id = str(args.get("action_id", f"ACT-{len(session.commitments) + 1 if session else 1}"))
         raw_due = str(args.get("due_date") or "").strip()
         due_date_ist = resolve_due_date_ist(raw_due, anchor=anchor_dt, default_days=2)
+
+        if session is not None:
+            consent_eval = getattr(session, "last_consent_eval", None) or {}
+            consent_kind = consent_eval.get("kind")
+            pending_conf = getattr(session, "pending_confirmation", None)
+            allowed_by_gate = False
+            if consent_kind in ("CLEAR_YES", "SELECTIVE_KEEP") and pending_conf is not None:
+                allowed_by_gate = True
+            elif consent_kind == "SELECTIVE_KEEP":
+                allowed_by_gate = True
+
+            if not allowed_by_gate:
+                return {
+                    "recorded": False,
+                    "rejected_reason": (
+                        "Commitment requires a preceding single-action confirmation question with a real IST due date "
+                        "AND an explicit clear yes from the seller."
+                    ),
+                    "total_commitments": len(session.commitments),
+                }
+
+            # Bind canonical action_id & IST due_date from pending confirmation / action plan when available
+            if pending_conf and pending_conf.get("action_id"):
+                action_id = str(pending_conf["action_id"])
+            plan_match = next(
+                (a for a in (getattr(session, "action_plan_items", None) or []) if a.get("action_id") == action_id),
+                None,
+            )
+            if plan_match and plan_match.get("due_date_ist"):
+                due_date_ist = str(plan_match["due_date_ist"])
+            elif pending_conf and pending_conf.get("due_date"):
+                due_date_ist = str(pending_conf["due_date"])
+
         commitment = {
             "action_id": action_id,
             "action_summary": normalize_indian_grouping(str(args.get("action_summary", "")).strip()),
@@ -293,6 +406,20 @@ def execute_tool(
                 session.commitments[existing_idx] = commitment
             else:
                 session.commitments.append(commitment)
+            if hasattr(session, "action_statuses"):
+                cur = dict(session.action_statuses.get(action_id) or {})
+                cur.update(
+                    {
+                        "action_id": action_id,
+                        "action_summary": commitment["action_summary"] or cur.get("title", action_id),
+                        "owner": commitment["owner"],
+                        "due_date": due_date_ist,
+                        "target_metric": commitment["target_metric"],
+                        "status": "agreed",
+                    }
+                )
+                session.action_statuses[action_id] = cur
+            session.pending_confirmation = None
         return {
             "recorded": True,
             "commitment": commitment,
@@ -321,20 +448,22 @@ def execute_tool(
         issues = [normalize_indian_grouping(str(i)) for i in issues]
         default_fu = compute_followup_date_ist(offset_days=3, anchor=anchor_dt)
         if session is not None:
+            # Ensure untouched pending items are marked not_discussed
+            for aid, st in list((getattr(session, "action_statuses", None) or {}).items()):
+                if st.get("status") == "pending":
+                    st["status"] = "not_discussed"
+            buckets = _partition_action_statuses(session)
             whatsapp_text = normalize_indian_grouping(_format_whatsapp_summary(session, ctx, issues))
-            norm_commits = [
-                {
-                    **c,
-                    "action_summary": normalize_indian_grouping(str(c.get("action_summary", ""))),
-                    "target_metric": normalize_indian_grouping(str(c.get("target_metric", ""))),
-                }
-                for c in session.commitments
-            ]
+            norm_commits = buckets["agreed"]
             summary_card = {
                 "seller_name": ctx.profile.seller_name,
                 "shop_name": ctx.profile.shop_name,
                 "key_issues": issues,
                 "commitments": norm_commits,
+                "agreed_actions": buckets["agreed"],
+                "tentative_actions": buckets["tentative"],
+                "declined_actions": buckets["declined"],
+                "not_discussed_actions": buckets["not_discussed"],
                 "followup": session.followup_schedule
                 or {
                     "followup_date": default_fu,
@@ -352,6 +481,10 @@ def execute_tool(
                 "shop_name": ctx.profile.shop_name,
                 "key_issues": issues,
                 "commitments": [],
+                "agreed_actions": [],
+                "tentative_actions": [],
+                "declined_actions": [],
+                "not_discussed_actions": [],
                 "followup": {"followup_date": default_fu, "success_targets": _default_targets(ctx, snapshot)},
                 "whatsapp_text": "\n".join(issues),
             },

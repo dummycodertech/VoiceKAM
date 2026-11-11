@@ -102,9 +102,16 @@ export function createKamBrainController({rootEl,summaryEl,getBranding}){
   function render(){rootEl.innerHTML=`<section class="card"><h2>Account snapshot${b.follow?'<span class="chip ok">3-Day Follow-Up</span>':""}</h2>${table()}</section>${prior()}${diag()}${evidence()}${plan()}${trail()}`}
   function summary(d){
     summaryEl.classList.remove("hidden");
+    const agreed=d.agreed_actions||d.commitments||[];
+    const tentative=d.tentative_actions||[];
+    const declined=d.declined_actions||[];
+    const notDisc=d.not_discussed_actions||[];
     summaryEl.innerHTML=`<section class="card summary-card"><h2>Call Summary &amp; Mock WhatsApp Recap</h2><b>${esc(d.shop_name)}</b>
       <p style="margin-top:8px">Key issues</p><ul>${(d.key_issues||[]).map(x=>`<li>${esc(x)}</li>`).join("")}</ul>
-      <p>Committed actions</p><ul>${(d.commitments||[]).map(c=>`<li><b>${esc(c.action_id)}</b> ${esc(c.action_summary)}, ${esc(c.owner)}, due ${esc(c.due_date)}</li>`).join("")||"<li>None yet</li>"}</ul>
+      <p>Agreed actions</p><ul>${agreed.map(c=>`<li><b>${esc(c.action_id)}</b> ${esc(c.action_summary)}, ${esc(c.owner)}, due ${esc(c.due_date)}</li>`).join("")||"<li>None yet</li>"}</ul>
+      <p>Tentative</p><ul>${tentative.map(t=>`<li><b>${esc(t.action_id)}</b> ${esc(t.action_summary)}${t.due_date?`, proposed ${esc(t.due_date)}`:""}</li>`).join("")||"<li>None</li>"}</ul>
+      <p>Declined or not agreed</p><ul>${declined.map(x=>`<li><b>${esc(x.action_id)}</b> ${esc(x.action_summary)}</li>`).join("")||"<li>None</li>"}</ul>
+      <p>Not discussed</p><ul>${notDisc.map(x=>`<li><b>${esc(x.action_id)}</b> ${esc(x.action_summary)}</li>`).join("")||"<li>None</li>"}</ul>
       <p>Next call: ${esc(d.followup?.followup_date||"in 3 days")}. Targets: ${esc((d.followup?.success_targets||[]).join("; "))}</p>
       <p style="margin-top:12px">Mock WhatsApp / SMS dispatch</p><pre id="whatsappPreview">${esc(d.whatsapp_text)}</pre>
       <div class="row"><button id="btnCopyWhatsapp" class="btn sm" type="button">Copy message</button><button id="btnDownloadSummary" class="btn sm" type="button">Download .txt</button></div></section>`;

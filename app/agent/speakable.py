@@ -253,8 +253,8 @@ def to_speakable_text(
 def enforce_voice_length(text: str, phase: str, max_words: int = 45) -> str:
     """Keep spoken turns crisp and within the voice word-count budget without mid-phrase cuts."""
     clean = strip_reasoning_and_markdown(text)
-    limit = 75 if phase == "SUMMARY" else max_words
-    soft_limit = 82 if phase == "SUMMARY" else (55 if phase in ("DIAGNOSE", "RECOMMEND") else limit)
+    limit = 74 if phase == "SUMMARY" else max_words
+    soft_limit = 74 if phase == "SUMMARY" else limit
     words = clean.split()
     if len(words) <= limit:
         return clean

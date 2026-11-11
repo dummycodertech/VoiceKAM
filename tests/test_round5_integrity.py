@@ -185,3 +185,77 @@ async def test_projection_claim_audit_and_no_causal_claim_before_diagnose():
     await _collect_turn(orch, session, "Show me the options please.")
     assert len(session.projection_warnings) >= 1
     assert any(w["claimed"] == 8 and w["projected"] == 13 for w in session.projection_warnings)
+
+
+async def test_group3_consent_gate_one_action_per_turn_and_summary_sections():
+    ctx = _load_brief_context()
+    store = SessionStore()
+    session = store.create(mode="proactive", language="en-IN", seller_context=ctx)
+    router = LLMRouter([MockLLMProvider()])
+    orch = AgentOrchestrator(router)
+
+    await _collect_turn(orch, session, None)  # GREETING
+    await _collect_turn(orch, session, "Tell me why sales dropped.")  # DIAGNOSE
+    rec = await _collect_turn(orch, session, "Okay what actions do you recommend?")  # RECOMMEND
+    rec_text = rec["done"]["text"]
+
+    # Item 2: plain prose (no bullets/numbering), single pending action with yes/no + real due date, 2-3 actions in plan
+    assert "1." not in rec_text and "Priority 1" not in rec_text and "- " not in rec_text
+    assert "?" in rec_text
+    assert len(session.action_plan_items) >= 2
+    assert session.pending_confirmation is not None
+
+    # Direct commit_action call with ambiguous last reply MUST be rejected (Condition b)
+    await _collect_turn(orch, session, "maybe i will try")
+    rejected = execute_tool(
+        "commit_action",
+        {"action_id": "ACT-1", "action_summary": "Restock", "owner": "Ananya", "due_date": "Friday 13 Nov"},
+        session=session,
+    )
+    assert rejected["recorded"] is False
+    assert session.commitments == []
+
+    # Second ambiguous reply ("I'll try") marks ACT-1 as tentative (never agreed) and moves to next pending action
+    await _collect_turn(orch, session, "I'll try")
+    assert session.commitments == []
+    assert session.action_statuses["ACT-1"]["status"] == "tentative"
+
+    # Explicit decline on next pending action ("No, not that") marks it declined rather than committed
+    next_id = session.pending_confirmation["action_id"]
+    await _collect_turn(orch, session, "No, not the price change")
+    assert session.action_statuses[next_id]["status"] == "declined" or any(
+        st["status"] == "declined" for st in session.action_statuses.values()
+    )
+
+    # Clear yes commits remaining action and finishes to SUMMARY
+    if session.phase.value != "SUMMARY":
+        last_ev = await _collect_turn(orch, session, "Yes, I agree")
+    else:
+        last_ev = None
+    if session.phase.value != "SUMMARY":
+        last_ev = await _collect_turn(orch, session, "Please send the call summary.")
+
+    assert last_ev is not None
+    spoken_recap = last_ev["done"]["text"]
+    assert 10 <= len(spoken_recap.split()) <= 80
+    assert "1,35,000" in spoken_recap and "follow-up" in spoken_recap.lower()
+    assert session.commitments[0]["due_date"] in spoken_recap
+    assert session.ungrounded_warnings == []
+    assert session.date_warnings == []
+
+    assert session.summary_card is not None
+    card = session.summary_card
+    wa = card["whatsapp_text"]
+    assert "*Agreed actions:*" in wa
+    assert "*Tentative:*" in wa
+    assert "*Declined or not agreed:*" in wa
+    assert "*Not discussed:*" in wa
+    # Only explicitly consented actions under Agreed actions
+    assert [a["action_id"] for a in card["agreed_actions"]] == [c["action_id"] for c in session.commitments]
+    assert card["commitments"] == card["agreed_actions"]
+    assert len(card["tentative_actions"]) >= 1
+    assert len(card["declined_actions"]) >= 1
+    # Flat average price + multiple causes present in key_issues
+    joined_issues = " ".join(card["key_issues"]).lower()
+    assert "flat" in joined_issues or "average selling price" in joined_issues
+    assert "stock" in joined_issues and ("pric" in joined_issues or "visibility" in joined_issues or "cancel" in joined_issues)

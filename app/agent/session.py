@@ -41,11 +41,20 @@ class SessionState:
     phase: Phase = Phase.GREETING
     turn_count: int = 0
     clarify_questions_asked: int = 0
+    clarify_topics_asked: list[str] = field(default_factory=list)
     diagnose_turns: int = 0
     recommend_turns: int = 0
     commit_turns: int = 0
     diagnose_preloaded: bool = False
     recommend_preloaded: bool = False
+    action_plan_items: list[dict[str, Any]] = field(default_factory=list)
+    action_statuses: dict[str, dict[str, Any]] = field(default_factory=dict)
+    pending_confirmation: dict[str, Any] | None = None
+    last_consent_eval: dict[str, Any] = field(default_factory=dict)
+    early_end_requested: bool = False
+    subject_to_eligibility_count: int = 0
+    last_salutation_turn: int = -10
+    last_got_it_turn: int = -10
     messages: list[CanonicalMessage] = field(default_factory=list)
     tool_history: list[dict[str, Any]] = field(default_factory=list)
     grounded_numbers: set[float] = field(default_factory=set)
@@ -77,6 +86,8 @@ class SessionState:
             "dataset": self.seller_context.summary_dict(),
             "tool_history": self.tool_history,
             "commitments": self.commitments,
+            "action_statuses": self.action_statuses,
+            "pending_confirmation": self.pending_confirmation,
             "prior_commitments": self.prior_commitments,
             "followup_schedule": self.followup_schedule,
             "summary_card": self.summary_card,
