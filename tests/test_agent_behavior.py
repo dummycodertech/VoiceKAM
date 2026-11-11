@@ -238,7 +238,9 @@ def test_hi_in_speakable_rupee_and_percent_and_custom_sku_grounding():
     assert "लाख" in spoken_hi and "हज़ार" in spoken_hi
     assert "प्रतिशत" in spoken_hi
     assert "पचहत्तर" in spoken_hi
-    assert "9021" in spoken_hi
+    assert "Widget" in spoken_hi
+    assert "ZAP-9021" not in spoken_hi
+    assert "9021" not in spoken_hi
 
     # Custom SKU ID ZAP-9021 must NOT trigger ungrounded number warnings while true fake numbers DO
     assert find_ungrounded_numbers("Check ZAP-9021 which lost 10 orders.", {10.0, 500.0}, seller_context=custom_ctx) == []

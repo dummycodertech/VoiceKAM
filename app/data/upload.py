@@ -14,7 +14,7 @@ import re
 import time
 import uuid
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from app.config import Settings, get_settings
@@ -24,6 +24,7 @@ from app.data.context import (
     SellerProfile,
     SkuRecord,
 )
+from app.utils.formatting import format_indian_number
 
 REQUIRED_SKU_COLUMNS: tuple[str, ...] = (
     "sku_id",
@@ -161,7 +162,7 @@ def parse_csv_rows(raw_bytes: bytes, *, max_bytes: int, label: str = "CSV file")
         raise DatasetValidationError([f"{label} is empty."])
     if len(raw_bytes) > max_bytes:
         raise DatasetValidationError(
-            [f"{label} exceeds the {max_bytes // 1024} KB ({max_bytes:,} bytes) size limit."]
+            [f"{label} exceeds the {max_bytes // 1024} KB ({format_indian_number(max_bytes)} bytes) size limit."]
         )
     try:
         text = raw_bytes.decode("utf-8-sig")
@@ -199,7 +200,7 @@ def _validate_sku_rows(
         errors.append("Dataset must contain at least 1 SKU row.")
         return []
     if len(rows) > max_skus:
-        errors.append(f"Upload contains {len(rows):,} SKUs; maximum allowed is {max_skus:,}.")
+        errors.append(f"Upload contains {format_indian_number(len(rows))} SKUs; maximum allowed is {format_indian_number(max_skus)}.")
         return []
 
     first_keys = {str(k).strip() for k in rows[0].keys()}
@@ -438,9 +439,50 @@ def parse_uploaded_csv(
     return SellerContext(profile=profile, skus=skus, cancellations=cancels)
 
 
+def apply_seller_meta_override(
+    context: SellerContext,
+    *,
+    shop_name: str | None = None,
+    seller_name: str | None = None,
+    salutation: str | None = None,
+    settings: Settings | None = None,
+) -> SellerContext:
+    """Return a shallow clone of SellerContext with sanitized shop/seller/salutation overrides."""
+    errors: list[str] = []
+    clean_shop = _sanitize_text(shop_name, "seller.shop_name", errors, max_len=100) if shop_name else ""
+    clean_seller = _sanitize_text(seller_name, "seller.seller_name", errors, max_len=80) if seller_name else ""
+    clean_sal = _sanitize_text(salutation, "seller.salutation", errors, max_len=80) if salutation else ""
+    if errors:
+        raise DatasetValidationError(errors[:15])
+    if not clean_shop and not clean_seller and not clean_sal:
+        return context
+
+    prof = context.profile
+    new_seller = clean_seller or prof.seller_name
+    if clean_sal:
+        new_sal = clean_sal
+    elif clean_seller and prof.salutation.lower() in ("seller partner", prof.seller_name.lower()):
+        new_sal = clean_seller
+    else:
+        new_sal = prof.salutation
+    new_shop = clean_shop or prof.shop_name
+    new_title = clean_shop or prof.scenario_title
+    return replace(
+        context,
+        profile=replace(
+            prof,
+            seller_name=new_seller,
+            salutation=new_sal,
+            shop_name=new_shop,
+            scenario_title=new_title,
+        ),
+    )
+
+
 def parse_uploaded_json(
     raw_bytes: bytes,
     *,
+    seller_meta: dict[str, Any] | None = None,
     settings: Settings | None = None,
 ) -> SellerContext:
     cfg = settings or get_settings()
@@ -448,7 +490,7 @@ def parse_uploaded_json(
         raise DatasetValidationError(["JSON payload is empty."])
     if len(raw_bytes) > cfg.max_upload_bytes:
         raise DatasetValidationError(
-            [f"JSON payload exceeds the {cfg.max_upload_bytes // 1024} KB ({cfg.max_upload_bytes:,} bytes) size limit."]
+            [f"JSON payload exceeds the {cfg.max_upload_bytes // 1024} KB ({format_indian_number(cfg.max_upload_bytes)} bytes) size limit."]
         )
     try:
         payload = json.loads(raw_bytes.decode("utf-8-sig"))
@@ -459,7 +501,7 @@ def parse_uploaded_json(
     if isinstance(payload, list):
         sku_rows = payload
         cancel_rows: list[dict[str, Any]] = []
-        seller_meta: dict[str, Any] = {}
+        json_seller_meta: dict[str, Any] = {}
     elif isinstance(payload, dict):
         if "skus" not in payload or not isinstance(payload["skus"], list):
             raise DatasetValidationError(["JSON object must contain a 'skus' array."])
@@ -468,16 +510,21 @@ def parse_uploaded_json(
         if not isinstance(cancel_rows, list):
             errors.append("'cancellations' must be an array when provided.")
             cancel_rows = []
-        seller_meta = payload.get("seller") or {}
-        if not isinstance(seller_meta, dict):
+        json_seller_meta = payload.get("seller") or {}
+        if not isinstance(json_seller_meta, dict):
             errors.append("'seller' must be an object when provided.")
-            seller_meta = {}
+            json_seller_meta = {}
     else:
         raise DatasetValidationError(["Uploaded JSON must be an object with 'skus' or a list of SKU rows."])
 
+    merged_meta = dict(json_seller_meta)
+    for k, v in (seller_meta or {}).items():
+        if v is not None and str(v).strip():
+            merged_meta[k] = v
+
     skus = _validate_sku_rows(sku_rows, max_skus=cfg.max_upload_skus, errors=errors)
     cancels = _validate_cancellations_rows(cancel_rows, errors=errors) if cancel_rows else []
-    profile = _build_profile_from_meta(seller_meta, errors, cfg)
+    profile = _build_profile_from_meta(merged_meta, errors, cfg)
     if errors:
         raise DatasetValidationError(errors[:15])
     return SellerContext(profile=profile, skus=skus, cancellations=cancels)

@@ -57,7 +57,7 @@
 ## Offline Mock Evaluation (Offline Mock)
 
 ### Run Metadata (Offline Mock)
-- **Run Date (UTC):** 2026-11-11 07:39 UTC
+- **Run Date (UTC):** 2026-11-11 14:41 UTC
 - **Evaluation Kind:** Offline Mock
 - **Responder Model ID(s):** mock:deterministic-test-kam
 - **Judge Model ID(s):** not measured
@@ -72,34 +72,34 @@
 | Metric (Offline Mock) | Measured Value | Detail |
 | --- | --- | --- |
 | Grounding rate (turns) | 100.0% | 156/156 turns with 0 ungrounded numbers |
-| Grounding rate (number tokens) | 100.0% | 348/348 spoken numeric tokens traced to tools |
+| Grounding rate (number tokens) | 100.0% | 404/404 spoken numeric tokens traced to tools |
 | Expected tool-call accuracy | 100.0% | 192/192 expected phase tools executed |
 | Phase completion rate | 100.0% | 24/24 attempted calls reached SUMMARY/CLOSE with card (24/24 completed without API failure) |
-| Words per turn (avg / max) | 23.5 / 34 | Voice word budget (`45` default, `55` DIAGNOSE/RECOMMEND, `82` SUMMARY) |
-| Commitments captured | 100.0% (24 total) | 24/24 calls captured >=1 commitment |
-| LLM first-token latency (p50 / p95) | 1.0 ms / 3.0 ms | SSE `latency.llm_first_token_ms` (156 turns measured on local machine; hosted latency `not measured`) |
-| First-audio latency (p50 / p95) | not measured / not measured | Turn start -> first `sentence` + `edge-tts` MP3 ready (0 turns measured) |
+| Words per turn (avg / max) | 24.3 / 48 | Voice word budget (`45` default, `55` DIAGNOSE/RECOMMEND, `82` SUMMARY) |
+| Commitments captured | 100.0% (28 total) | 24/24 calls captured >=1 commitment |
+| LLM first-token latency (p50 / p95) | 17.0 ms / 24.0 ms | SSE `latency.llm_first_token_ms` (156 turns measured on local machine; hosted latency `not measured`) |
+| First-audio latency (p50 / p95) | not measured / not measured | Turn start -> first `sentence` + `edge-tts` MP3 ready (0 turns measured on local machine; hosted latency `not measured`) |
 | Cross-model score (LLM-judged, 1-5) | not measured | LLM-judged by distinct model (`relevance, empathy, clarity, actionability, honesty_uncertainty`) |
 
 ### Breakdown by Scenario (Offline Mock)
 
 | Scenario (Offline Mock) | Calls | Completion Rate | Tool Accuracy | Grounded Turns | Avg Words | Commitments |
 | --- | --- | --- | --- | --- | --- | --- |
-| Scenario A (Offline Mock) | 6/6 | 100.0% | 100.0% | 100.0% | 23.1 | 6 |
-| Scenario B (Offline Mock) | 6/6 | 100.0% | 100.0% | 100.0% | 23.4 | 6 |
-| Scenario C (Offline Mock) | 6/6 | 100.0% | 100.0% | 100.0% | 23.5 | 6 |
-| Scenario D (Offline Mock) | 6/6 | 100.0% | 100.0% | 100.0% | 24.0 | 6 |
+| Scenario A (Offline Mock) | 6/6 | 100.0% | 100.0% | 100.0% | 23.4 | 7 |
+| Scenario B (Offline Mock) | 6/6 | 100.0% | 100.0% | 100.0% | 24.0 | 7 |
+| Scenario C (Offline Mock) | 6/6 | 100.0% | 100.0% | 100.0% | 24.3 | 7 |
+| Scenario D (Offline Mock) | 6/6 | 100.0% | 100.0% | 100.0% | 25.6 | 7 |
 
 ### Breakdown by Persona (Offline Mock)
 
 | Persona (Offline Mock) | Calls | Completion Rate | Grounded Turns | Avg / Max Words | Commitments | Judge (1-5) |
 | --- | --- | --- | --- | --- | --- | --- |
-| cooperative (en-IN, Offline Mock) | 4/4 | 100.0% | 100.0% | 23.9 / 34 | 4 | not measured |
-| vague (en-IN, Offline Mock) | 4/4 | 100.0% | 100.0% | 23.1 / 34 | 4 | not measured |
-| frustrated (en-IN, Offline Mock) | 4/4 | 100.0% | 100.0% | 24.4 / 34 | 4 | not measured |
-| off_topic (en-IN, Offline Mock) | 4/4 | 100.0% | 100.0% | 23.0 / 34 | 4 | not measured |
-| interrupting (en-IN, Offline Mock) | 4/4 | 100.0% | 100.0% | 22.5 / 34 | 4 | not measured |
-| hinglish (hinglish, Offline Mock) | 4/4 | 100.0% | 100.0% | 24.4 / 34 | 4 | not measured |
+| cooperative (en-IN, Offline Mock) | 4/4 | 100.0% | 100.0% | 24.3 / 44 | 4 | not measured |
+| vague (en-IN, Offline Mock) | 4/4 | 100.0% | 100.0% | 23.0 / 44 | 4 | not measured |
+| frustrated (en-IN, Offline Mock) | 4/4 | 100.0% | 100.0% | 24.5 / 44 | 4 | not measured |
+| off_topic (en-IN, Offline Mock) | 4/4 | 100.0% | 100.0% | 24.2 / 48 | 8 | not measured |
+| interrupting (en-IN, Offline Mock) | 4/4 | 100.0% | 100.0% | 25.1 / 44 | 4 | not measured |
+| hinglish (hinglish, Offline Mock) | 4/4 | 100.0% | 100.0% | 25.1 / 44 | 4 | not measured |
 <!-- END_OFFLINE_EVAL -->
 
 ---

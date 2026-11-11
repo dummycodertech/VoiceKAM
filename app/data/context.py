@@ -152,8 +152,8 @@ class FollowupAdjustment:
     repriced_skus: list[dict[str, Any]] = field(default_factory=list)
     updated_cancellations: tuple[CancellationRow, ...] = ()
     updated_funnel: VisibilityFunnel | None = None
-    oos_target_max: int = 8
-    cancellation_target_pct_max: float = 10.0
+    oos_target_max: int | None = None
+    cancellation_target_pct_max: float | None = None
     monthly_sales_pace_target: int = 0
     default_prior_commitments: tuple[dict[str, Any], ...] = ()
     blocker_notes: dict[str, str] = field(default_factory=dict)

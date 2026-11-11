@@ -566,6 +566,17 @@ def _build_followup_adjustment(
     rem_oos_count = sum(1 for s in skus if s.is_oos_curr) - len(restocked_skus)
     oos_target = max(chronic_oos_count + 1, rem_oos_count - 1)
 
+    orders_prev_sum = sum(s.orders_prev for s in skus)
+    orders_curr_sum = sum(s.orders_curr for s in skus)
+    cancels_prev_sum = sum(c.count_prev for c in cancellations)
+    cancels_curr_sum = sum(c.count_curr for c in cancellations)
+    base_cancel_pct = cancels_prev_sum / max(1, orders_prev_sum + cancels_prev_sum) * 100.0
+    curr_cancel_pct = cancels_curr_sum / max(1, orders_curr_sum + cancels_curr_sum) * 100.0
+    if curr_cancel_pct > base_cancel_pct:
+        cancel_target_pct = round(base_cancel_pct + 0.30 * (curr_cancel_pct - base_cancel_pct), 1)
+    else:
+        cancel_target_pct = round(max(1.0, curr_cancel_pct), 1)
+
     commitments = (
         {
             "action_id": "ACT-1",
@@ -596,7 +607,7 @@ def _build_followup_adjustment(
         updated_cancellations=tuple(updated_cancels),
         updated_funnel=updated_funnel,
         oos_target_max=oos_target,
-        cancellation_target_pct_max=10.0,
+        cancellation_target_pct_max=cancel_target_pct,
         default_prior_commitments=commitments,
         blocker_notes=blocker_notes,
     )

@@ -3,9 +3,9 @@ import{createKamBrainController}from"/static/kam_brain.js";
 import{createVoiceViz}from"/static/viz.js";
 const S={
   inCall:false,sessionId:null,mode:"inbound",language:"en-IN",headphones:false,tts:"auto",
-  orb:"idle",t0:0,timer:null,rec:null,recognizing:false,eou:null,silence:null,reprompted:false,
+  orb:"idle",t0:0,timer:null,rec:null,recognizing:false,eou:null,silence:null,reprompted:false,userTurns:0,
   interim:"",final:"",sttEnd:0,abort:null,done:0,hook:null,viz:null,
-  projectName:"VoiceKAM",agentName:"Metis",sellerSalutation:"seller partner",
+  projectName:"VoiceKAM",agentName:"Metis",sellerSalutation:"",
   dataSource:"demo",scenarioId:"A",datasetId:null,scenarios:[]
 };
 const el={};
@@ -18,10 +18,11 @@ const orbCopy=s=>{
   return["Ready",`Press Start call to talk with ${a}`];
 };
 const repromptText=lang=>{
-  const sal=S.sellerSalutation||"seller partner";
-  if(lang==="hi-IN")return`${sal}, क्या आप सुन रहे हैं? आप बोल सकते हैं।`;
-  if(lang==="hinglish")return`${sal}, aap line par hain? Aap bata sakte hain.`;
-  return`${sal}, are you still there? I am listening whenever you are ready.`;
+  const rawSal=(S.sellerSalutation||"").trim();
+  const sal=rawSal&&rawSal.toLowerCase()!=="seller partner"?rawSal:"";
+  if(lang==="hi-IN")return sal?`${sal}, क्या आप सुन रहे हैं? आप बोल सकते हैं।`:"क्या आप सुन रहे हैं? आप बोल सकते हैं।";
+  if(lang==="hinglish")return sal?`${sal}, aap line par hain? Aap bata sakte hain.`:"Aap line par hain? Aap bata sakte hain.";
+  return sal?`${sal}, are you still there? I am listening whenever you are ready.`:"Are you still there? I am listening whenever you are ready.";
 };
 const SR=()=>window.SpeechRecognition||window.webkitSpeechRecognition||null;
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -71,10 +72,11 @@ function phases(active,mode=S.mode){
 function stopRec(){clearTimeout(S.eou);clearTimeout(S.silence);if(S.rec&&S.recognizing){try{S.rec.stop()}catch{}}S.recognizing=false}
 function armSilence(){
   clearTimeout(S.silence);if(!S.inCall||S.reprompted)return;
+  const waitMs=S.userTurns===0?8000:6000;
   S.silence=setTimeout(()=>{
     if(!S.inCall||S.orb!=="listening"||S.reprompted)return;
     S.reprompted=true;const t=repromptText(S.language);caption("kam",t);queue.enqueueSentence(t);
-  },6000);
+  },waitMs);
 }
 function listen(){
   if(!S.inCall)return;
@@ -211,7 +213,7 @@ export async function startCall({modeOverride=null,priorSessionId=null}={}){
   if(modeOverride){S.mode=modeOverride;el.selMode.value=modeOverride}else S.mode=el.selMode.value;
   S.language=el.selLanguage.value;S.headphones=el.chkHeadphones.checked;S.tts=el.selTtsProvider.value;
   queue.configure({language:S.language,ttsProvider:S.tts});
-  S.inCall=true;S.reprompted=false;el.captionsBox.innerHTML="";el.summaryCardSection.classList.add("hidden");
+  S.inCall=true;S.reprompted=false;S.userTurns=0;el.captionsBox.innerHTML="";el.summaryCardSection.classList.add("hidden");
   el.btnStartCall.disabled=true;el.btnEndCall.disabled=false;
   setDatasetControlsDisabled(true);
   queue.playRingtone();setOrb("thinking");   // ringtone runs inside the click so audio is unlocked
@@ -225,11 +227,17 @@ export async function startCall({modeOverride=null,priorSessionId=null}={}){
       scenario_id:S.dataSource==="demo"?S.scenarioId:null,
       dataset_id:S.dataSource==="upload"?S.datasetId:null
     };
+    if(S.dataSource==="upload"){
+      const upShop=el.txtUploadShop?.value.trim();
+      const upSeller=el.txtUploadSeller?.value.trim();
+      if(upShop)reqBody.shop_name=upShop;
+      if(upSeller)reqBody.seller_name=upSeller;
+    }
     const r=await fetch("/api/session/start",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(reqBody)});
     if(!r.ok)throw new Error(await readApiError(r,`Could not start the call (${r.status})`));
     const p=await r.json();S.sessionId=p.session_id;
     phases(p.session?.phase||"GREETING",p.session?.mode||S.mode);S.hook?.onSessionStarted?.(p);
-    if(p.demo_data)renderDatasetSummary(p.demo_data);
+    if(p.demo_data){applyBranding(null,p.demo_data?.overview?.seller);renderDatasetSummary(p.demo_data)}
     await stream(`/api/session/${S.sessionId}/greeting`,{});
   }catch(e){showError(e.message);endCall()}
 }
@@ -242,7 +250,7 @@ export function endCall(){
 export async function say(text){
   const t=(text||"").trim();if(!t)return;
   if(!S.inCall||!S.sessionId){await startCall();if(!S.inCall||!S.sessionId)return}
-  el.errorBanner.classList.add("hidden");queue.stopAll();S.reprompted=false;S.sttEnd=performance.now();
+  el.errorBanner.classList.add("hidden");queue.stopAll();S.userTurns++;S.sttEnd=performance.now();
   const last=el.captionsBox.lastElementChild;
   if(!last||!last.classList.contains("seller")||last.lastChild.textContent!==t)caption("seller",t);
   setOrb("thinking");queue.scheduleLatencyFiller(600);
@@ -296,9 +304,13 @@ function applyBranding(branding,seller){
     S.hook?.refresh?.();
   }
   if(seller){
-    S.sellerSalutation=seller.salutation||seller.seller_name||S.sellerSalutation;
-    if(el.brandSub&&seller.shop_name)el.brandSub.textContent=`Virtual KAM · ${seller.shop_name}`;
-    queue.configure({salutation:S.sellerSalutation});
+    const rawSal=(seller.salutation||seller.seller_name||"").trim();
+    S.sellerSalutation=rawSal&&rawSal.toLowerCase()!=="seller partner"?rawSal:"";
+    if(el.brandSub){
+      const sh=(seller.shop_name||"").trim();
+      el.brandSub.textContent=sh&&sh.toLowerCase()!=="custom uploaded store"?`Virtual KAM · ${sh}`:"Account intelligence assistant";
+    }
+    queue.configure({salutation:S.sellerSalutation||"Seller"});
   }
   setOrb(S.orb);
 }

@@ -29,6 +29,7 @@ from app.data.seed_data import get_scenario_context, list_scenarios
 from app.data.upload import (
     DatasetValidationError,
     UploadedDatasetStore,
+    apply_seller_meta_override,
     build_template_payload,
     parse_uploaded_csv,
     parse_uploaded_json,
@@ -139,6 +140,9 @@ class StartSessionRequest(BaseModel):
     prior_session_id: str | None = None
     scenario_id: str | None = None
     dataset_id: str | None = None
+    shop_name: str | None = None
+    seller_name: str | None = None
+    salutation: str | None = None
 
 
 class ChatRequest(BaseModel):
@@ -373,7 +377,7 @@ def create_app(
                     raise DatasetValidationError(["Cancellations CSV exceeds the maximum allowed size."])
 
             if filename.endswith(".json") or raw_bytes.lstrip().startswith((b"{", b"[")):
-                ctx = parse_uploaded_json(raw_bytes, settings=settings)
+                ctx = parse_uploaded_json(raw_bytes, seller_meta=meta, settings=settings)
             else:
                 ctx = parse_uploaded_csv(
                     raw_bytes,
@@ -458,6 +462,10 @@ def create_app(
         dataset_id: str | None = None
         resolved_ctx: SellerContext | None = None
 
+        shop_override: str | None = None
+        seller_override: str | None = None
+        salutation_override: str | None = None
+
         if "multipart/form-data" in content_type:
             form = await request.form()
             mode_val = str(form.get("mode") or "inbound")
@@ -469,6 +477,9 @@ def create_app(
             prior_session_id = str(form.get("prior_session_id")) if form.get("prior_session_id") else None
             scenario_id = str(form.get("scenario_id")) if form.get("scenario_id") else None
             dataset_id = str(form.get("dataset_id")) if form.get("dataset_id") else None
+            shop_override = str(form.get("shop_name")) if form.get("shop_name") else None
+            seller_override = str(form.get("seller_name")) if form.get("seller_name") else None
+            salutation_override = str(form.get("salutation")) if form.get("salutation") else None
 
             if form.get("file") is not None:
                 try:
@@ -494,12 +505,30 @@ def create_app(
             prior_session_id = req.prior_session_id
             scenario_id = req.scenario_id
             dataset_id = req.dataset_id
+            shop_override = req.shop_name
+            seller_override = req.seller_name
+            salutation_override = req.salutation
 
         if resolved_ctx is None:
             if dataset_id:
                 resolved_ctx = _resolve_context(dataset_id=dataset_id)
             elif scenario_id:
                 resolved_ctx = _resolve_context(scenario=scenario_id)
+
+        if resolved_ctx is not None and (shop_override or seller_override or salutation_override):
+            try:
+                resolved_ctx = apply_seller_meta_override(
+                    resolved_ctx,
+                    shop_name=shop_override,
+                    seller_name=seller_override,
+                    salutation=salutation_override,
+                    settings=settings,
+                )
+            except DatasetValidationError as exc:
+                return JSONResponse(
+                    {"valid": False, "detail": exc.errors[0], "errors": exc.errors},
+                    status_code=422,
+                )
 
         session = store.create(
             mode=mode,

@@ -12,6 +12,7 @@ from typing import Any, Literal
 from app.data.context import SellerContext, SnapshotType
 from app.data.seed_data import get_scenario_context
 from app.llm.base import CanonicalMessage
+from app.utils.dates import anchor_now_ist
 
 
 class Phase(str, Enum):
@@ -40,11 +41,20 @@ class SessionState:
     phase: Phase = Phase.GREETING
     turn_count: int = 0
     clarify_questions_asked: int = 0
+    clarify_topics_asked: list[str] = field(default_factory=list)
     diagnose_turns: int = 0
     recommend_turns: int = 0
     commit_turns: int = 0
     diagnose_preloaded: bool = False
     recommend_preloaded: bool = False
+    action_plan_items: list[dict[str, Any]] = field(default_factory=list)
+    action_statuses: dict[str, dict[str, Any]] = field(default_factory=dict)
+    pending_confirmation: dict[str, Any] | None = None
+    last_consent_eval: dict[str, Any] = field(default_factory=dict)
+    early_end_requested: bool = False
+    subject_to_eligibility_count: int = 0
+    last_salutation_turn: int = -10
+    last_got_it_turn: int = -10
     messages: list[CanonicalMessage] = field(default_factory=list)
     tool_history: list[dict[str, Any]] = field(default_factory=list)
     grounded_numbers: set[float] = field(default_factory=set)
@@ -56,6 +66,11 @@ class SessionState:
     failover_events: list[dict[str, str]] = field(default_factory=list)
     latency_history: list[dict[str, Any]] = field(default_factory=list)
     ungrounded_warnings: list[dict[str, Any]] = field(default_factory=list)
+    anchor_date_ist: str = field(default_factory=lambda: anchor_now_ist().isoformat())
+    latest_projections: dict[str, Any] = field(default_factory=dict)
+    date_warnings: list[dict[str, Any]] = field(default_factory=list)
+    projection_warnings: list[dict[str, Any]] = field(default_factory=list)
+    causal_warnings: list[dict[str, Any]] = field(default_factory=list)
     created_at: float = field(default_factory=time.monotonic)
     last_accessed: float = field(default_factory=time.monotonic)
 
@@ -68,9 +83,12 @@ class SessionState:
             "phase": self.phase.value,
             "turn_count": self.turn_count,
             "clarify_questions_asked": self.clarify_questions_asked,
+            "clarify_topics_asked": list(self.clarify_topics_asked),
             "dataset": self.seller_context.summary_dict(),
             "tool_history": self.tool_history,
             "commitments": self.commitments,
+            "action_statuses": self.action_statuses,
+            "pending_confirmation": self.pending_confirmation,
             "prior_commitments": self.prior_commitments,
             "followup_schedule": self.followup_schedule,
             "summary_card": self.summary_card,
@@ -78,6 +96,10 @@ class SessionState:
             "failover_events": self.failover_events,
             "latency_history": self.latency_history,
             "ungrounded_warnings": self.ungrounded_warnings,
+            "anchor_date_ist": self.anchor_date_ist,
+            "date_warnings": self.date_warnings,
+            "projection_warnings": self.projection_warnings,
+            "causal_warnings": self.causal_warnings,
         }
 
 
