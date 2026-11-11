@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import json
-import time
 from typing import Any, AsyncIterator
 
-import pytest
 from fastapi.testclient import TestClient
 
 from app.config import Settings
@@ -101,7 +99,7 @@ class _OkProvider(LLMProvider):
         self.calls += 1
         yield LLMStreamChunk(
             type="token",
-            text="Got it, Arjun ji. Let me check your account.",
+            text="Got it, Vikram ji. Let me check your account.",
             provider=self.provider_name,
             model=self.model_name,
         )
@@ -169,7 +167,7 @@ def test_rest_endpoints_v1_contract_shapes(monkeypatch):
         return b"ID3-CONTRACT-MP3"
 
     monkeypatch.setattr(svc, "_synthesize_edge_tts", fake_edge)
-    tts_ok = client.post("/api/tts", json={"text": "Hello Arjun ji", "language": "en-IN"})
+    tts_ok = client.post("/api/tts", json={"text": "Hello Vikram ji", "language": "en-IN"})
     assert tts_ok.status_code == 200
     assert tts_ok.headers["content-type"].startswith("audio/mpeg")
     assert "x-tts-provider" in tts_ok.headers
@@ -178,7 +176,7 @@ def test_rest_endpoints_v1_contract_shapes(monkeypatch):
 
     tts_fb = client.post(
         "/api/tts",
-        json={"text": "Hello Arjun ji", "language": "en-IN", "provider": "browser"},
+        json={"text": "Hello Vikram ji", "language": "en-IN", "provider": "browser"},
     )
     assert tts_fb.status_code == 200
     fb_json = tts_fb.json()

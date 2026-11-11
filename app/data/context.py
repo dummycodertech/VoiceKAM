@@ -86,30 +86,9 @@ class SkuRecord:
             return True
         return False
 
-    # Backward-compatible attribute aliases for existing callers/tests
-    @property
-    def last_month_orders(self) -> int:
-        return self.orders_prev
-
-    @property
-    def this_month_orders(self) -> int:
-        return self.orders_curr
-
-    @property
-    def last_month_oos(self) -> bool:
-        return self.is_oos_prev
-
-    @property
-    def this_month_oos(self) -> bool:
-        return self.is_oos_curr
-
     @property
     def days_oos_this_month(self) -> int:
         return int(self.days_out_of_stock_curr or 0)
-
-    @property
-    def stock_qty(self) -> int:
-        return int(self.stock_qty_curr or 0)
 
 
 @dataclass(frozen=True)

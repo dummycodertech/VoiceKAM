@@ -39,10 +39,6 @@ class ProviderRateLimitOrTransientError(Exception):
             self.reason_code = "server_error"
 
 
-class ProviderConfigError(Exception):
-    """Raised when provider API key is missing or invalid."""
-
-
 class AllProvidersUnavailableError(Exception):
     """Raised when no configured LLM provider succeeded."""
 

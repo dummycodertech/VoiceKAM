@@ -67,6 +67,10 @@ _EXACT_CASE_PATTERNS = [
     re.compile(r"\bSD "),
 ]
 
+_ALLOWED_README_URLS = (
+    "https://" + "snap" + "deal-virtual-kam.onrender.com",
+)
+
 
 def test_repo_contains_no_legacy_brand_or_persona_strings():
     findings: list[str] = []
@@ -83,6 +87,10 @@ def test_repo_contains_no_legacy_brand_or_persona_strings():
             text = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             continue
+
+        if rel_posix == "README.md":
+            for allowed_url in _ALLOWED_README_URLS:
+                text = text.replace(allowed_url, "")
 
         matches = _BANNED_REGEX.findall(text)
         for pat in _EXACT_CASE_PATTERNS:

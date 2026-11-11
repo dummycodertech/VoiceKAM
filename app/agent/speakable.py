@@ -226,7 +226,7 @@ def to_speakable_text(
 
     s = re.sub(r"([0-9][0-9,]*(?:\.[0-9]+)?)\s*%", _pct_repl, s)
 
-    s = s.replace("<=", "कम से कम " if False else ("अधिकतम " if language == "hi-IN" else "at most "))
+    s = s.replace("<=", "अधिकतम " if language == "hi-IN" else "at most ")
     s = s.replace(">=", "न्यूनतम " if language == "hi-IN" else "at least ")
 
     cfg = settings or get_settings()

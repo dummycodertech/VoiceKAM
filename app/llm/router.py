@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass, field
 from typing import Any, AsyncIterator
 
 from app.config import AGENT_NAME, Settings
@@ -22,19 +21,6 @@ from app.llm.mock_provider import MockLLMProvider
 from app.llm.openrouter_provider import OpenRouterProvider
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class ProviderHealth:
-    provider: str
-    model: str
-    configured: bool
-    live_in_catalog: bool | None = None
-    smoke_ok: bool | None = None
-    smoke_tool_called: bool | None = None
-    smoke_latency_ms: int | None = None
-    smoke_error: str | None = None
-    cooldown_until: float = 0.0
 
 
 class LLMRouter:

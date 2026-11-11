@@ -48,7 +48,7 @@ class Failing429Provider(LLMProvider):
 
 
 class SimpleOkProvider(LLMProvider):
-    def __init__(self, provider_name: str = "gemini", model_name: str = "gemini-3.5-flash-lite", reply: str = "Got it, Arjun ji.") -> None:
+    def __init__(self, provider_name: str = "gemini", model_name: str = "gemini-3.5-flash-lite", reply: str = "Got it, Vikram ji.") -> None:
         self.provider_name = provider_name
         self.model_name = model_name
         self.reply = reply
@@ -80,7 +80,7 @@ async def test_429_triggers_failover_and_cooldown_skips_exhausted_provider():
     async for chunk, fo in router.stream_turn_with_failover([CanonicalMessage(role="user", content="Hi")], []):
         events.append((chunk, fo))
     assert p1.calls == 1
-    assert any(c.text == "Got it, Arjun ji." for c, _ in events)
+    assert any(c.text == "Got it, Vikram ji." for c, _ in events)
     assert events[0][1][0]["from"] == "groq:openai/gpt-oss-20b"
     assert events[0][1][0]["to"] == "gemini:gemini-3.5-flash-lite"
     assert router.is_in_cooldown(p1.key)
@@ -96,7 +96,7 @@ async def test_429_triggers_failover_and_cooldown_skips_exhausted_provider():
 async def test_session_survives_mid_call_provider_switch():
     store = SessionStore()
     session = store.create(mode="inbound", language="en-IN")
-    p1 = SimpleOkProvider("groq", "openai/gpt-oss-20b", "I understand, Arjun ji. Did any top sellers go out of stock?")
+    p1 = SimpleOkProvider("groq", "openai/gpt-oss-20b", "I understand, Vikram ji. Did any top sellers go out of stock?")
     p2 = SimpleOkProvider("gemini", "gemini-3.5-flash-lite", "Got it. Did dispatch delays also happen?")
     router = LLMRouter(providers=[p1, p2])
     orch = AgentOrchestrator(router)
@@ -150,10 +150,10 @@ async def test_diagnose_phase_pre_executes_tools_and_exposes_zero_tools_to_llm()
 
 def test_think_tag_filter_strips_reasoning_blocks():
     f = ThinkTagFilter()
-    chunks = ["<thi", "nk>internal math 1+1=2</th", "ink>Hello ", "Arjun ji."]
+    chunks = ["<thi", "nk>internal math 1+1=2</th", "ink>Hello ", "Vikram ji."]
     out = "".join(f.feed(c) for c in chunks) + f.flush()
     assert "internal math" not in out
-    assert out.strip() == "Hello Arjun ji."
+    assert out.strip() == "Hello Vikram ji."
 
 
 def test_speakable_text_normalizes_rupees_percentages_and_abbreviations():

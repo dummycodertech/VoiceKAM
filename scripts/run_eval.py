@@ -567,7 +567,7 @@ def _render_eval_section(
         (
             "- **Measurement Environment:** Local Windows development machine over consumer broadband "
             "(hosted Render free tier latency: `not measured`)"
-            if mode == "live"
+            if section_kind == "Live"
             else "- **Measurement Environment:** In-process offline mock on local Windows development machine (`first_audio_ms` and LLM-judged score: `not measured`; hosted cloud latency: `not measured`)"
         ),
         f"- **Execution / Cache Note:** {note}",

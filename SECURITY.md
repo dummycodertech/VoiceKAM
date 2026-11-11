@@ -8,7 +8,7 @@ Security fixes apply to the latest commit on the default branch of this open-sou
 
 Please report suspected security vulnerabilities privately rather than opening a public issue:
 
-- **Contact:** `[security@example.com]` *(replace with your preferred security contact or enable GitHub Private Vulnerability Reporting)*
+- **Channel:** Use [GitHub Security Advisories](https://github.com/dummycodertech/VoiceKAM/security/advisories/new) (Private Vulnerability Reporting) on the repository instead of posting in public issues.
 - **What to include:** Affected endpoint/file, minimal reproduction steps or proof-of-concept payload, and potential impact.
 
 We aim to acknowledge reports within 72 hours and coordinate a fix before public disclosure.

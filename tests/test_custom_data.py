@@ -7,7 +7,7 @@ import json
 from fastapi.testclient import TestClient
 
 from app.config import Settings
-from app.data.upload import DatasetValidationError, build_template_payload, parse_uploaded_csv, parse_uploaded_json
+from app.data.upload import DatasetValidationError, build_template_payload, parse_uploaded_csv
 from app.engine import diagnosis
 from app.llm.mock_provider import MockLLMProvider
 from app.llm.router import LLMRouter

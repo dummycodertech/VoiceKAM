@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import pytest
 
 from app.agent.orchestrator import AgentOrchestrator
@@ -174,7 +173,7 @@ async def test_proactive_and_followup_languages_and_carryover():
         {
             "action_id": "ACT-1",
             "action_summary": "Restock top 5 OOS SKUs",
-            "owner": "Arjun Mehta",
+            "owner": "Vikram Kulkarni",
             "due_date": "Within 48 hours",
             "target_metric": "OOS <= 8",
             "status": "committed",

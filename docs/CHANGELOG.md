@@ -1,7 +1,7 @@
 # Changelog
 
-All notable changes on the `standalone` branch are logged here by phase.
-The original v1.0 snapshot remains frozen on `main`.
+All notable changes on the post-v1.0 standalone releases (merged into `main`) are logged here by phase.
+The original v1.0 baseline remains tagged (`v1.0-assessment`).
 
 ---
 

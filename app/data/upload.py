@@ -14,7 +14,7 @@ import re
 import time
 import uuid
 from collections import OrderedDict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from app.config import Settings, get_settings
@@ -154,20 +154,6 @@ def _infer_seller_fault(reason_label: str, raw_flag: Any, location: str, errors:
         return False
     low_reason = reason_label.lower()
     return any(k in low_reason for k in _SELLER_FAULT_KEYWORDS)
-
-
-def _parse_bool_flag(raw: Any, location: str, errors: list[str], default: bool = False) -> bool:
-    if raw is None or str(raw).strip() == "":
-        return default
-    if isinstance(raw, bool):
-        return raw
-    low = str(raw).strip().lower()
-    if low in {"true", "1", "yes", "y"}:
-        return True
-    if low in {"false", "0", "no", "n"}:
-        return False
-    errors.append(f"{location}: invalid boolean value '{raw}'.")
-    return default
 
 
 def parse_csv_rows(raw_bytes: bytes, *, max_bytes: int, label: str = "CSV file") -> list[dict[str, str]]:

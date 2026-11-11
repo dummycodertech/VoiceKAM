@@ -2,7 +2,7 @@
 
 - **Contract Version:** `v1` (post-handoff stabilized baseline)
 - **Runtime Requirement:** Single-worker FastAPI + Uvicorn (`--workers 1`) due to in-memory `SessionStore`, `LLMRouter` cooldown/disablement tables, and `TTSService` LRU cache.
-- **CORS / Headers:** `allow_origins=["*"]`, `allow_methods=["*"]`, `allow_headers=["*"]`; SSE streams set `Cache-Control: no-cache` and `X-Accel-Buffering: no`. No CSP headers are emitted.
+- **CORS / Headers / Security:** Configurable via `CORS_ORIGINS` (`*` default in local/public demo; comma-separated origin list supported), `allow_methods=["GET", "POST", "OPTIONS"]`, `allow_headers=["*"]`. All responses include `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Permissions-Policy: camera=(), geolocation=(), payment=(), usb=(), microphone=(self)`, and `Cross-Origin-Opener-Policy: same-origin` (no CSP headers emitted). Request bodies above `MAX_REQUEST_BYTES` (`2 MB`) return HTTP `413`; per-IP `SlidingWindowRateLimiter` returns HTTP `429` with `Retry-After`; `DAILY_TURN_CAP` emits a sanitized SSE `error` event. SSE streams set `Cache-Control: no-cache` and `X-Accel-Buffering: no`.
 - **Breaking Change Policy (`v1`):** Required endpoint paths, SSE event names, and required payload fields documented below must not be removed or renamed within `v1`. Enforced by `tests/test_api_contract.py`.
 
 ---
@@ -15,15 +15,18 @@
 | `GET` | `/static/{path}` | Path under `frontend/` | Static asset (`200`) or `404` |
 | `GET` | `/favicon.ico` | — | `204 No Content` |
 | `GET` | `/api/health` | — | `{status, prototype_notice, branding, providers_configured, active_llm_chain, disabled_providers, llm_startup_smoke, tts_config, features}` |
-| `GET` | `/api/demo-data` | `?snapshot=current\|followup` (default `"current"`) | `{overview, metrics, diagnosis, oos_skus, cancellations, pricing, funnel, action_plan}` |
-| `GET` | `/api/tts-probe` | `?text=...&language=en-IN\|hi-IN\|hinglish` | `{edge_tts_ok, voice, latency_ms, recommended_tts_mode, ...}` |
+| `GET` | `/api/scenarios` | — | `{scenarios: [{scenario_id, title, description, ...}]}` |
+| `GET` | `/api/demo-data` | `?snapshot=current\|followup&scenario=A\|B\|C\|D&dataset_id=...` | `{overview, metrics, diagnosis, oos_skus, cancellations, pricing, funnel, action_plan, dataset}` |
+| `GET` | `/api/data/template` | `?format=csv\|cancellations_csv\|json` | Downloadable template file (`text/csv` or `application/json`) |
+| `POST` | `/api/data/validate` | `multipart/form-data` (`file`, optional `cancellations_file`, seller fields) or `application/json` | `{valid, dataset_id, summary, completeness, diagnosis_preview, errors}` (`422` on schema/safety error, `429` if rate-limited) |
+| `GET` | `/api/tts-probe` | `?text=...&language=en-IN\|hi-IN\|hinglish` | `{edge_tts_ok, voice, latency_ms, recommended_tts_mode, ...}` (`429` if rate-limited) |
 
 ---
 
 ## 2. Session & Voice REST Endpoints
 
 ### `POST /api/session/start`
-- **Request (`application/json`):** `{"mode"?: "inbound"|"proactive"|"followup" = "inbound", "language"?: "en-IN"|"hi-IN"|"hinglish" = "en-IN", "prior_session_id"?: string|null = null}`
+- **Request (`application/json`):** `{"mode"?: "inbound"|"proactive"|"followup" = "inbound", "language"?: "en-IN"|"hi-IN"|"hinglish" = "en-IN", "prior_session_id"?: string|null = null, "scenario_id"?: string|null = null, "dataset_id"?: string|null = null}` (also accepts `multipart/form-data` with uploaded `file` / optional `cancellations_file` and form metadata; returns `422` on invalid dataset, `429` if rate-limited)
 - **Response (`200 OK`):** `{"session_id": string, "session": SessionPublicDict, "demo_data": DemoDataDict}`
 
 ### `GET /api/session/{session_id}` & `POST /api/session/{session_id}/settings`
