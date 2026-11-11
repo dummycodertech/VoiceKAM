@@ -86,6 +86,7 @@ def _canonical_to_gemini(
             parts: list[types.Part] = []
             if msg.content:
                 parts.append(types.Part.from_text(text=msg.content))
+            emitted_fc = False
             for tc in msg.tool_calls:
                 call_id_to_name[tc.id] = tc.name
                 sig_b64 = (tc.extra_metadata or {}).get("gemini_thought_signature")
@@ -94,11 +95,36 @@ def _canonical_to_gemini(
                 if sig_bytes:
                     fc_part.thought_signature = sig_bytes
                 parts.append(fc_part)
+                emitted_fc = True
             if parts:
+                # Gemini requires every model(function_call) turn to come immediately after
+                # a user turn (plain user or function_response user turn).
+                if emitted_fc and (not contents or contents[-1].role != "user"):
+                    contents.append(
+                        types.Content(
+                            role="user",
+                            parts=[types.Part.from_text(text="Continue assisting the seller.")],
+                        )
+                    )
                 contents.append(types.Content(role="model", parts=parts))
         elif msg.role == "tool":
             fn_name = msg.tool_name or call_id_to_name.get(msg.tool_call_id or "", "tool")
-            if msg.tool_call_id and msg.tool_call_id in folded_call_ids:
+            has_open_fc_turn = bool(
+                contents
+                and (
+                    (
+                        contents[-1].role == "model"
+                        and contents[-1].parts
+                        and any(p.function_call is not None for p in contents[-1].parts)
+                    )
+                    or (
+                        contents[-1].role == "user"
+                        and contents[-1].parts
+                        and any(p.function_response is not None for p in contents[-1].parts)
+                    )
+                )
+            )
+            if (msg.tool_call_id and msg.tool_call_id in folded_call_ids) or not has_open_fc_turn:
                 contents.append(
                     types.Content(
                         role="user",

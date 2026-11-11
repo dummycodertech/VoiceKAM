@@ -39,27 +39,37 @@ def _sse(event: str, data: dict[str, Any]) -> dict[str, Any]:
 
 
 def slice_recent_messages(messages: list[CanonicalMessage], max_count: int = 10) -> list[CanonicalMessage]:
-    """Slice trailing conversation messages without orphaning tool-call/tool-result pairs."""
+    """Slice trailing conversation messages without orphaning tool-call/tool-result pairs or Gemini user-turn ordering."""
     n = len(messages)
     if n == 0:
         return []
     start = max(0, n - max_count)
 
-    # Never begin the window inside a tool-result sequence (step backward to owning assistant(tool_calls))
-    while start > 0 and messages[start].role == "tool":
+    # Step backward over tool responses AND assistant(tool_calls) so Gemini always sees
+    # a preceding user turn before any model(function_call) turn.
+    while start > 0 and (
+        messages[start].role == "tool"
+        or (messages[start].role == "assistant" and bool(messages[start].tool_calls))
+    ):
         start -= 1
 
-    # If the window still starts on role="tool" (corrupted orphan prefix without assistant tool_calls), skip forward
-    while start < n and messages[start].role == "tool":
-        start += 1
-
-    # If window starts on an assistant tool-call whose tool results aren't immediately next, skip forward
-    if start < n and messages[start].role == "assistant" and messages[start].tool_calls:
-        nxt = start + 1
-        if nxt >= n or messages[nxt].role != "tool":
+    # Skip corrupted/orphan leading tool results or headless tool-call exchanges without a prior user turn
+    while start < n:
+        msg = messages[start]
+        if msg.role == "tool":
             start += 1
-            while start < n and messages[start].role == "tool":
+            continue
+        if msg.role == "assistant" and msg.tool_calls:
+            nxt = start + 1
+            if nxt >= n or messages[nxt].role != "tool":
                 start += 1
+                continue
+            if any(m.role == "user" for m in messages[start + 1 :]):
+                start += 1
+                while start < n and messages[start].role == "tool":
+                    start += 1
+                continue
+        break
 
     return messages[start:]
 
