@@ -1,0 +1,44 @@
+name: VoiceKAM Tests & Offline Eval
+
+on:
+  push:
+    branches: [main, standalone]
+  pull_request:
+    branches: [main, standalone]
+
+jobs:
+  test-and-eval:
+    runs-on: ubuntu-latest
+    env:
+      ALLOW_MOCK_LLM: "true"
+      TTS_PROVIDER: "browser"
+      TTS_CACHE_ENABLED: "false"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install runtime and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio playwright
+          playwright install chromium --with-deps
+
+      - name: Run deterministic and contract test suite
+        run: |
+          pytest --ignore=tests/test_walking_skeleton_ui.py --ignore=tests/test_full_ui.py -k "not live_llm" -v
+
+      - name: Run hermetic Playwright UI tests
+        run: |
+          pytest tests/test_walking_skeleton_ui.py tests/test_full_ui.py -v
+
+      - name: Verify offline multi-persona evaluation harness
+        run: |
+          python scripts/run_eval.py --offline --n 1 --output /tmp/eval_ci.md

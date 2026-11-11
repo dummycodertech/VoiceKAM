@@ -16,9 +16,10 @@ htmlcov/
 cloudflared.exe
 cloudflared
 
-# Generated / temporary media & logs
+# Generated / temporary media, archives & caches
 *.mp3
 *.wav
+*.zip
 logs/
 scratch/
 frontend_old_backup/

@@ -68,8 +68,23 @@ class Settings(BaseSettings):
     # Upload & Session Constraints
     max_upload_skus: int = 2000
     max_upload_bytes: int = 1_048_576
+    max_request_bytes: int = 2_097_152
     session_ttl_seconds: int = 7200
     max_sessions: int = 200
+
+    # Security, Quotas & CORS
+    cors_origins: str = "*"
+    daily_turn_cap: int = 400
+    rate_limit_chat_per_10m: int = 30
+    rate_limit_tts_per_10m: int = 120
+    rate_limit_stt_per_10m: int = 30
+    rate_limit_starts_per_hour: int = 20
+
+    def cors_origin_list(self) -> list[str]:
+        raw = self.cors_origins.strip()
+        if not raw or raw == "*":
+            return ["*"]
+        return [o.strip() for o in raw.split(",") if o.strip()]
 
     def groq_model_list(self) -> list[str]:
         return [m.strip() for m in self.groq_models.split(",") if m.strip()]

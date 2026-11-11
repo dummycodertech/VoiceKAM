@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import logging
+import math
+import re
+import time
+from collections import deque
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -36,6 +41,95 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 logger = logging.getLogger(__name__)
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
+
+_SECRET_REDACT_RE = re.compile(
+    r"(?:gsk_[A-Za-z0-9_-]+|AIza[A-Za-z0-9_-]+|sk-[A-Za-z0-9_-]{8,}|Bearer\s+[A-Za-z0-9._-]+)",
+    re.IGNORECASE,
+)
+
+
+def _scrub_secrets(value: Any) -> Any:
+    if isinstance(value, str):
+        return _SECRET_REDACT_RE.sub("[REDACTED]", value)
+    if isinstance(value, list):
+        return [_scrub_secrets(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _scrub_secrets(v) for k, v in value.items()}
+    return value
+
+
+def _client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for") or ""
+    if forwarded.strip():
+        first_hop = forwarded.split(",", 1)[0].strip()
+        if first_hop:
+            return first_hop[:64]
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
+
+
+class SlidingWindowRateLimiter:
+    """In-memory per-IP sliding window rate limiter (bounded by passive expiry)."""
+
+    def __init__(self) -> None:
+        self._hits: dict[tuple[str, str], deque[float]] = {}
+
+    def check_and_record(
+        self,
+        bucket: str,
+        ip: str,
+        limit: int,
+        window_seconds: int,
+        now: float | None = None,
+    ) -> tuple[bool, int]:
+        if limit <= 0 or window_seconds <= 0:
+            return True, 0
+        ts = time.monotonic() if now is None else now
+        cutoff = ts - window_seconds
+        key = (bucket, ip)
+        q = self._hits.get(key)
+        if q is None:
+            q = deque()
+            self._hits[key] = q
+        while q and q[0] <= cutoff:
+            q.popleft()
+        if len(q) >= limit:
+            retry_after = max(1, math.ceil(window_seconds - (ts - q[0])))
+            return False, retry_after
+        q.append(ts)
+        # Periodically prune completely empty keys if map grows large
+        if len(self._hits) > 2000:
+            stale = [k for k, vals in self._hits.items() if not vals or vals[-1] <= cutoff]
+            for k in stale:
+                self._hits.pop(k, None)
+        return True, 0
+
+
+class DailyTurnTracker:
+    """Global per-UTC-day LLM turn counter enforcing DAILY_TURN_CAP."""
+
+    def __init__(self) -> None:
+        self._date = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d")
+        self._count = 0
+
+    def _roll_if_needed(self) -> None:
+        today = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d")
+        if today != self._date:
+            self._date = today
+            self._count = 0
+
+    def consume(self, cap: int) -> bool:
+        self._roll_if_needed()
+        if cap > 0 and self._count >= cap:
+            return False
+        self._count += 1
+        return True
+
+    @property
+    def current_count(self) -> int:
+        self._roll_if_needed()
+        return self._count
 
 
 class StartSessionRequest(BaseModel):
@@ -81,6 +175,15 @@ def _build_demo_payload(ctx: SellerContext, snapshot: str = "current") -> dict[s
     }
 
 
+def _rate_limit_response(action_label: str, retry_after: int) -> JSONResponse:
+    msg = f"Too many {action_label} requests from this address. Please wait {retry_after} seconds and try again."
+    return JSONResponse(
+        {"detail": msg, "message": msg, "retry_after_seconds": retry_after},
+        status_code=429,
+        headers={"Retry-After": str(retry_after)},
+    )
+
+
 def create_app(
     settings_override: Settings | None = None,
     router_override: LLMRouter | None = None,
@@ -96,6 +199,8 @@ def create_app(
         ttl_seconds=settings.session_ttl_seconds,
         max_entries=settings.max_sessions,
     )
+    rate_limiter = SlidingWindowRateLimiter()
+    daily_turns = DailyTurnTracker()
     router = router_override or LLMRouter.from_settings(settings)
     tts_service = tts_override or TTSService(settings)
     orchestrator = AgentOrchestrator(router=router)
@@ -133,16 +238,47 @@ def create_app(
     app.state.settings = settings
     app.state.store = store
     app.state.dataset_store = dataset_store
+    app.state.rate_limiter = rate_limiter
+    app.state.daily_turns = daily_turns
     app.state.router = router
     app.state.tts_service = tts_service
     app.state.orchestrator = orchestrator
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_methods=["*"],
+        allow_origins=settings.cors_origin_list(),
+        allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["*"],
     )
+
+    @app.middleware("http")
+    async def security_and_size_guard(request: Request, call_next):
+        cl_raw = request.headers.get("content-length")
+        if cl_raw is not None:
+            try:
+                if int(cl_raw) > settings.max_request_bytes:
+                    return JSONResponse(
+                        {
+                            "detail": (
+                                f"Request body exceeds maximum allowed size "
+                                f"({settings.max_request_bytes // 1024} KB)."
+                            )
+                        },
+                        status_code=413,
+                    )
+            except ValueError:
+                return JSONResponse({"detail": "Invalid Content-Length header."}, status_code=400)
+
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        response.headers.setdefault(
+            "Permissions-Policy",
+            "camera=(), geolocation=(), payment=(), usb=(), microphone=(self)",
+        )
+        response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+        return response
 
     if FRONTEND_DIR.exists():
         app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
@@ -172,19 +308,21 @@ def create_app(
             },
             "active_llm_chain": [p.key for p in router.configured_providers() if not router.is_disabled(p.key)],
             "disabled_providers": dict(router.disabled_providers),
-            "llm_startup_smoke": router.startup_report,
+            "llm_startup_smoke": _scrub_secrets(router.startup_report),
             "tts_config": {
                 "provider": settings.tts_provider,
                 "voice_en": settings.tts_voice_en,
                 "voice_hi": settings.tts_voice_hi,
                 "active_gemini_tts_model": tts_service.active_gemini_tts_model,
-                "gemini_tts_smoke": tts_service.gemini_tts_smoke_report,
+                "gemini_tts_smoke": _scrub_secrets(tts_service.gemini_tts_smoke_report),
             },
             "features": {
                 "enable_gemini_live": settings.enable_gemini_live,
                 "whisper_stt_fallback": bool(settings.groq_api_key.strip()),
                 "max_upload_skus": settings.max_upload_skus,
                 "max_upload_bytes": settings.max_upload_bytes,
+                "max_request_bytes": settings.max_request_bytes,
+                "daily_turn_cap": settings.daily_turn_cap,
             },
         }
 
@@ -255,6 +393,12 @@ def create_app(
 
     @app.post("/api/data/validate")
     async def validate_uploaded_data(request: Request):
+        ok, retry = rate_limiter.check_and_record(
+            "start", _client_ip(request), settings.rate_limit_starts_per_hour, 3600
+        )
+        if not ok:
+            return _rate_limit_response("dataset validation", retry)
+
         try:
             ctx, _ = await _parse_uploaded_form_or_json(request)
         except DatasetValidationError as exc:
@@ -300,6 +444,12 @@ def create_app(
 
     @app.post("/api/session/start")
     async def start_session(request: Request):
+        ok, retry = rate_limiter.check_and_record(
+            "start", _client_ip(request), settings.rate_limit_starts_per_hour, 3600
+        )
+        if not ok:
+            return _rate_limit_response("session start", retry)
+
         content_type = (request.headers.get("content-type") or "").lower()
         mode: CallMode = "inbound"
         language: LanguageCode = "en-IN"
@@ -330,6 +480,8 @@ def create_app(
                     )
         else:
             raw_body = await request.body()
+            if len(raw_body) > settings.max_request_bytes:
+                return JSONResponse({"detail": "Request payload exceeds maximum allowed size."}, status_code=413)
             payload_obj: dict[str, Any] = {}
             if raw_body.strip():
                 try:
@@ -362,7 +514,13 @@ def create_app(
         }
 
     @app.post("/api/session/{session_id}/greeting")
-    async def stream_greeting(session_id: str) -> StreamingResponse:
+    async def stream_greeting(session_id: str, request: Request):
+        ok, retry = rate_limiter.check_and_record(
+            "chat", _client_ip(request), settings.rate_limit_chat_per_10m, 600
+        )
+        if not ok:
+            return _rate_limit_response("call", retry)
+
         session = store.get(session_id)
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
@@ -384,12 +542,31 @@ def create_app(
         )
 
     @app.post("/api/chat")
-    async def chat_sse(req: ChatRequest) -> StreamingResponse:
+    async def chat_sse(req: ChatRequest, request: Request):
+        ok, retry = rate_limiter.check_and_record(
+            "chat", _client_ip(request), settings.rate_limit_chat_per_10m, 600
+        )
+        if not ok:
+            return _rate_limit_response("chat", retry)
+
         session = store.get(req.session_id)
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
         if req.language:
             session.language = req.language
+
+        if not daily_turns.consume(settings.daily_turn_cap):
+            async def cap_gen():
+                yield _format_sse(
+                    "error",
+                    {"message": "This public demo has reached its daily capacity. Please try again tomorrow."},
+                )
+
+            return StreamingResponse(
+                cap_gen(),
+                media_type="text/event-stream",
+                headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+            )
 
         async def event_gen():
             try:
@@ -424,7 +601,13 @@ def create_app(
         return session.to_public_dict()
 
     @app.post("/api/tts")
-    async def synthesize_tts(req: TTSRequest):
+    async def synthesize_tts(req: TTSRequest, request: Request):
+        ok, retry = rate_limiter.check_and_record(
+            "tts", _client_ip(request), settings.rate_limit_tts_per_10m, 600
+        )
+        if not ok:
+            return _rate_limit_response("voice synthesis", retry)
+
         audio, meta = await tts_service.synthesize(
             text=req.text,
             language=req.language,
@@ -444,11 +627,16 @@ def create_app(
 
     @app.get("/api/tts-probe")
     async def tts_probe_endpoint(
+        request: Request,
         text: str | None = None,
         language: LanguageCode = "en-IN",
-    ) -> dict[str, Any]:
+    ):
         """Diagnostic probe to verify whether edge-tts works from current host IPs."""
-        import time
+        ok, retry = rate_limiter.check_and_record(
+            "tts", _client_ip(request), settings.rate_limit_tts_per_10m, 600
+        )
+        if not ok:
+            return _rate_limit_response("voice probe", retry)
 
         probe_text = text or f"Namaste, I am {settings.agent_name}, testing neural voice output."
         voice = tts_service.voice_for_language(language)
@@ -474,14 +662,23 @@ def create_app(
 
     @app.post("/api/stt")
     async def whisper_stt_fallback(
+        request: Request,
         audio: UploadFile = File(...),
         language: str = Form("en"),
     ) -> dict[str, Any]:
+        ok, retry = rate_limiter.check_and_record(
+            "stt", _client_ip(request), settings.rate_limit_stt_per_10m, 600
+        )
+        if not ok:
+            return _rate_limit_response("speech-to-text", retry)  # type: ignore[return-value]
+
         if not settings.groq_api_key.strip():
             raise HTTPException(status_code=503, detail="GROQ_API_KEY not configured for Whisper STT fallback")
         raw = await audio.read()
         if not raw:
             raise HTTPException(status_code=400, detail="Empty audio upload")
+        if len(raw) > settings.max_request_bytes:
+            raise HTTPException(status_code=413, detail="Audio upload exceeds maximum allowed size")
 
         lang_hint = "hi" if language == "hi-IN" else "en"
         try:
