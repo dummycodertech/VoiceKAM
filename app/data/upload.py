@@ -24,6 +24,7 @@ from app.data.context import (
     SellerProfile,
     SkuRecord,
 )
+from app.utils.formatting import format_indian_number
 
 REQUIRED_SKU_COLUMNS: tuple[str, ...] = (
     "sku_id",
@@ -175,7 +176,7 @@ def parse_csv_rows(raw_bytes: bytes, *, max_bytes: int, label: str = "CSV file")
         raise DatasetValidationError([f"{label} is empty."])
     if len(raw_bytes) > max_bytes:
         raise DatasetValidationError(
-            [f"{label} exceeds the {max_bytes // 1024} KB ({max_bytes:,} bytes) size limit."]
+            [f"{label} exceeds the {max_bytes // 1024} KB ({format_indian_number(max_bytes)} bytes) size limit."]
         )
     try:
         text = raw_bytes.decode("utf-8-sig")
@@ -213,7 +214,7 @@ def _validate_sku_rows(
         errors.append("Dataset must contain at least 1 SKU row.")
         return []
     if len(rows) > max_skus:
-        errors.append(f"Upload contains {len(rows):,} SKUs; maximum allowed is {max_skus:,}.")
+        errors.append(f"Upload contains {format_indian_number(len(rows))} SKUs; maximum allowed is {format_indian_number(max_skus)}.")
         return []
 
     first_keys = {str(k).strip() for k in rows[0].keys()}
@@ -462,7 +463,7 @@ def parse_uploaded_json(
         raise DatasetValidationError(["JSON payload is empty."])
     if len(raw_bytes) > cfg.max_upload_bytes:
         raise DatasetValidationError(
-            [f"JSON payload exceeds the {cfg.max_upload_bytes // 1024} KB ({cfg.max_upload_bytes:,} bytes) size limit."]
+            [f"JSON payload exceeds the {cfg.max_upload_bytes // 1024} KB ({format_indian_number(cfg.max_upload_bytes)} bytes) size limit."]
         )
     try:
         payload = json.loads(raw_bytes.decode("utf-8-sig"))

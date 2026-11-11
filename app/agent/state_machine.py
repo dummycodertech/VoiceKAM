@@ -10,6 +10,7 @@ from app.agent.session import Phase, SessionState
 from app.config import Settings, get_settings
 from app.engine import diagnosis
 from app.engine.tools import TOOL_SCHEMAS
+from app.utils.formatting import format_inr
 
 # Precompiled word-boundary regexes (avoid substring bugs like "look"/"broken" triggering "ok")
 _DIAGNOSIS_REQUEST_RE = re.compile(
@@ -189,13 +190,13 @@ def _phase_instruction(
         if session.mode == "followup" and fu:
             return (
                 f"GOAL: Greet {salutation} warmly for your follow-up call, cite the updated pace "
-                f"(Rs {fu['sales_gmv_pace']:,} monthly pace, OOS {fu['out_of_stock_skus']}, "
+                f"({format_inr(fu['sales_gmv_pace'])} monthly pace, OOS {fu['out_of_stock_skus']}, "
                 f"cancellations {fu['cancellation_rate_pct']}%), and ask if they have 2 minutes to review remaining blockers."
             )
         if session.mode == "proactive":
             oos_note = f" and {oos_curr} products are out of stock" if oos_curr is not None else ""
             return (
-                f"GOAL: Open proactively—state sales moved {sales_pct}% to Rs {sales_curr:,}{oos_note}, "
+                f"GOAL: Open proactively—state sales moved {sales_pct}% to {format_inr(sales_curr)}{oos_note}, "
                 f"and ask if {salutation} has 2 minutes to review this together."
             )
         return f"GOAL: Greet {salutation} warmly and ask how you can help {shop_name} today."
@@ -208,7 +209,7 @@ def _phase_instruction(
 
     if p == Phase.CLARIFY:
         asp_note = (
-            f" (ASP stayed steady around Rs {asp_curr})" if diag.get("asp_flat") else f" (ASP shifted to Rs {asp_curr})"
+            f" (ASP stayed steady around {format_inr(asp_curr)})" if diag.get("asp_flat") else f" (ASP shifted to {format_inr(asp_curr)})"
         )
         return (
             f"GOAL: Clarify root causes (question {session.clarify_questions_asked + 1} of 3 max). Ask ONE short non-redundant question "
@@ -242,7 +243,7 @@ def _phase_instruction(
         cancel_note = f" Cancellation rate is {cancel_curr}%." if cancel_curr is not None else ""
         return (
             "GOAL: Give 2 ultra-short sentences under 40 words total using uncertain phrasing ('roughly'): "
-            f"(1) Cite exact ASP Rs {asp_curr} and that {top_text}.{cancel_note} "
+            f"(1) Cite exact ASP {format_inr(asp_curr)} and that {top_text}.{cancel_note} "
             f"(2) Name the secondary cause.{resid_note}{missing_note} Ask if they are ready for the action plan."
         )
 
@@ -324,6 +325,7 @@ def build_system_prompt(
         "- Ask at most ONE question per turn. Use natural acknowledgments ('Got it', 'I understand').",
         "- NO markdown, NO bullet lists, NO emojis, NO headings, NO internal reasoning.",
         "- NEVER invent or calculate numbers; speak ONLY numbers present in BASELINE SNAPSHOT or VERIFIED DATA CONTEXT.",
+        "- Format ALL rupee and large numbers using Indian digit grouping (e.g. Rs 1,35,000 and Rs 2,00,000, never Western 135,000).",
         "- Keep recommendations marketplace-agnostic: never claim guaranteed outcomes or real marketplace program names; qualify promos/ads with 'subject to eligibility'.",
         "- If a driver or metric is missing from the uploaded file, explicitly say it is 'not assessable with the data provided' and never guess.",
         "- If seller is angry or off-topic, empathize briefly and steer back to recovering their sales.",

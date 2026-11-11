@@ -17,6 +17,7 @@ from app.data.context import (
     SnapshotType,
     compute_data_completeness,
 )
+from app.utils.formatting import format_indian_number, format_inr
 
 UNAVAILABLE_MSG = "not assessable with the data provided"
 
@@ -372,18 +373,18 @@ def compute_headline_metrics(context: SellerContext, snapshot: SnapshotType = "c
 
     if orders_delta < 0 and abs(asp_delta_pct) <= 3.0:
         finding = (
-            f"Average Selling Price stayed nearly flat (Rs {int(round(last_asp))} -> Rs {int(round(curr_asp))}), "
-            f"proving the {abs(sales_delta_pct)}% sales drop is primarily a VOLUME issue ({abs(orders_delta)} fewer orders)."
+            f"Average Selling Price stayed nearly flat ({format_inr(int(round(last_asp)))} -> {format_inr(int(round(curr_asp)))}), "
+            f"proving the {abs(sales_delta_pct)}% sales drop is primarily a VOLUME issue ({format_indian_number(abs(orders_delta))} fewer orders)."
         )
     elif orders_delta < 0:
         finding = (
-            f"Orders moved {last_orders} -> {curr_orders} ({_pct_change(last_orders, curr_orders)}%) while ASP shifted "
-            f"Rs {int(round(last_asp))} -> Rs {int(round(curr_asp))} ({asp_delta_pct}%)."
+            f"Orders moved {format_indian_number(last_orders)} -> {format_indian_number(curr_orders)} ({_pct_change(last_orders, curr_orders)}%) while ASP shifted "
+            f"{format_inr(int(round(last_asp)))} -> {format_inr(int(round(curr_asp)))} ({asp_delta_pct}%)."
         )
     else:
         finding = (
-            f"Orders moved {last_orders} -> {curr_orders} ({_pct_change(last_orders, curr_orders)}%) and sales moved "
-            f"Rs {last_sales:,} -> Rs {curr_sales:,}."
+            f"Orders moved {format_indian_number(last_orders)} -> {format_indian_number(curr_orders)} ({_pct_change(last_orders, curr_orders)}%) and sales moved "
+            f"{format_inr(last_sales)} -> {format_inr(curr_sales)}."
         )
 
     result: dict[str, Any] = {
@@ -659,7 +660,7 @@ def get_pricing_gaps(context: SellerContext, snapshot: SnapshotType = "current")
         "pricing_gaps": gaps,
         "key_insight": (
             f"{len(gaps)} in-stock SKU(s) are priced >3% above competitor offers (vs {pricing['control_size']} control SKUs), "
-            f"accounting for roughly {pricing['orders']} lost orders (Rs {pricing['revenue']:,})."
+            f"accounting for roughly {pricing['orders']} lost orders ({format_inr(pricing['revenue'])})."
             if gaps
             else "No in-stock SKUs showed >3% competitor price gaps beyond control trends."
         ),
@@ -739,7 +740,7 @@ def get_visibility_funnel(context: SellerContext, snapshot: SnapshotType = "curr
         },
         "changes": changes,
         "key_insight": (
-            f"Search impressions moved {changes['impressions_pct']}% ({imp_prev:,} -> {imp_curr:,})"
+            f"Search impressions moved {changes['impressions_pct']}% ({format_indian_number(imp_prev)} -> {format_indian_number(imp_curr)})"
             + (f" while clicks moved {changes['clicks_pct']}%." if "clicks_pct" in changes else ".")
         ),
     }
@@ -990,7 +991,7 @@ def build_action_plan(context: SellerContext, snapshot: SnapshotType = "current"
                     "effort": "Medium",
                     "impact": "High",
                     "target_skus": sku_ids,
-                    "estimated_recovery_range_rs": f"Rs {int(low_est):,} - Rs {int(high_est):,}/month",
+                    "estimated_recovery_range_rs": f"{format_inr(int(low_est))} - {format_inr(int(high_est))}/month",
                     "recommended_due": "Within 48 hours",
                     "details": f"Top impacted OOS items: {sku_names}. Restocking restores baseline daily order pace.",
                 },
@@ -1001,7 +1002,7 @@ def build_action_plan(context: SellerContext, snapshot: SnapshotType = "current"
         gaps = pricing["pricing_gaps"][:3]
         gap_ids = [g["sku_id"] for g in gaps]
         gap_desc = ", ".join(
-            f"{g['name']} (Rs {int(g['seller_price'])} -> ~Rs {int(g['suggested_price'])})"
+            f"{g['name']} ({format_inr(int(g['seller_price']))} -> ~{format_inr(int(g['suggested_price']))})"
             for g in gaps
         )
         impact_rev = max(1000, int(pricing.get("total_pricing_lost_revenue") or 0))
@@ -1015,7 +1016,7 @@ def build_action_plan(context: SellerContext, snapshot: SnapshotType = "current"
                     "effort": "Low",
                     "impact": "Medium-High",
                     "target_skus": gap_ids,
-                    "estimated_recovery_range_rs": f"Rs {int(round(impact_rev * 0.60, -2)):,} - Rs {int(round(impact_rev * 0.90, -2)):,}/month",
+                    "estimated_recovery_range_rs": f"{format_inr(int(round(impact_rev * 0.60, -2)))} - {format_inr(int(round(impact_rev * 0.90, -2)))}/month",
                     "recommended_due": "Within 3 days",
                     "details": f"Adjust pricing on {gap_desc}, or test a limited promotional offer subject to eligibility.",
                 },
@@ -1037,7 +1038,7 @@ def build_action_plan(context: SellerContext, snapshot: SnapshotType = "current"
                     "effort": "Low",
                     "impact": "High" if impact_rev > 10000 else "Medium",
                     "target_skus": ["Storewide Inventory Sync", "Dispatch Queue"],
-                    "estimated_recovery_range_rs": f"Rs {int(round(impact_rev * 0.55, -2)):,} - Rs {int(round(impact_rev * 0.85, -2)):,}/month",
+                    "estimated_recovery_range_rs": f"{format_inr(int(round(impact_rev * 0.55, -2)))} - {format_inr(int(round(impact_rev * 0.85, -2)))}/month",
                     "recommended_due": "Starting today",
                     "details": f"Current cancellation rate is {curr_pct}%. Reconcile safety stock before pickup cutoff to avoid seller-fault penalties.",
                 },
@@ -1058,7 +1059,7 @@ def build_action_plan(context: SellerContext, snapshot: SnapshotType = "current"
                         "effort": "Medium",
                         "impact": "Medium-High",
                         "target_skus": ["Low-Impression Active SKUs"],
-                        "estimated_recovery_range_rs": f"Rs {int(round(impact_rev * 0.45, -2)):,} - Rs {int(round(impact_rev * 0.80, -2)):,}/month",
+                        "estimated_recovery_range_rs": f"{format_inr(int(round(impact_rev * 0.45, -2)))} - {format_inr(int(round(impact_rev * 0.80, -2)))}/month",
                         "recommended_due": "Within 5 days",
                         "details": "Search impressions dropped significantly; optimize product attributes and consider sponsored placement subject to eligibility.",
                     },
@@ -1092,7 +1093,7 @@ def build_action_plan(context: SellerContext, snapshot: SnapshotType = "current"
         "snapshot": snapshot,
         "actions": actions,
         "estimated_combined_recovery_rs": (
-            f"Rs {int(round(total_lost_rev * 0.55, -2)):,} - Rs {int(round(total_lost_rev * 0.88, -2)):,}/month (indicative range)"
+            f"{format_inr(int(round(total_lost_rev * 0.55, -2)))} - {format_inr(int(round(total_lost_rev * 0.88, -2)))}/month (indicative range)"
             if total_lost_rev > 0
             else "Maintains baseline stability"
         ),

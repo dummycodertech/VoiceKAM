@@ -12,6 +12,7 @@ from app.llm.base import (
     LLMStreamChunk,
     ToolCallRequest,
 )
+from app.utils.formatting import format_inr
 
 
 def _extract_json_marker(sys_text: str, prefix: str) -> dict[str, Any]:
@@ -153,7 +154,7 @@ class MockLLMProvider(LLMProvider):
         sales_pct = abs(float(snap.get("sales_delta_pct") or 0.0))
         asp = int(snap.get("asp") or 0)
         drivers = [d for d in (snap.get("drivers_summary") or []) if d.get("assessable") and d.get("lost_orders", 0) > 0]
-        issues = [f"Sales moved {sales_pct}% (Rs {sales_prev:,} -> Rs {sales_curr:,}); ASP is Rs {asp:,}."]
+        issues = [f"Sales moved {sales_pct}% ({format_inr(sales_prev)} -> {format_inr(sales_curr)}); ASP is {format_inr(asp)}."]
         for d in drivers[:2]:
             issues.append(f"{d['title']} accounted for {d['share_pct']}% ({d['lost_orders']} lost orders).")
         if snap.get("missing_signals"):
@@ -191,13 +192,13 @@ class MockLLMProvider(LLMProvider):
             oos_txt = f" and out-of-stock items are {fu_oos}" if fu_oos is not None else ""
             return (
                 f"Namaste {salutation}, calling for our check-in. "
-                f"Your sales pace moved {pace_pct}% to Rs {pace:,}{oos_txt}. Should we review remaining blockers?"
+                f"Your sales pace moved {pace_pct}% to {format_inr(pace)}{oos_txt}. Should we review remaining blockers?"
             )
 
         if phase == "GREETING":
             oos_txt = f" and {oos_curr} products went out of stock" if oos_curr is not None else ""
             return (
-                f"Namaste {salutation}, I noticed your sales moved {sales_pct}% to Rs {sales_curr:,}{oos_txt}. "
+                f"Namaste {salutation}, I noticed your sales moved {sales_pct}% to {format_inr(sales_curr)}{oos_txt}. "
                 "Do you have 2 minutes to review this together?"
             )
 
@@ -236,7 +237,7 @@ class MockLLMProvider(LLMProvider):
                     else f"{orders_drop} orders were lost"
                 )
                 return (
-                    f"{salutation}, your ASP is Rs {asp:,} and {summary_bit}. "
+                    f"{salutation}, your ASP is {format_inr(asp)} and {summary_bit}. "
                     "Optional missing columns are not assessable with the data provided. Ready for the action plan?"
                 )
 
@@ -252,7 +253,7 @@ class MockLLMProvider(LLMProvider):
             )
             cancel_txt = f", with {cancel_curr}% cancellations" if cancel_curr is not None else ""
             return (
-                f"{salutation}, ASP stayed around Rs {asp:,}, so {top_text}{cancel_txt}.{resid_txt} "
+                f"{salutation}, ASP stayed around {format_inr(asp)}, so {top_text}{cancel_txt}.{resid_txt} "
                 "Ready for the prioritised action plan?"
             )
 

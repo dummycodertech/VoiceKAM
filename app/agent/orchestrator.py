@@ -26,6 +26,7 @@ from app.config import Settings, get_settings
 from app.engine.tools import execute_tool
 from app.llm.base import CanonicalMessage, ToolCallRequest
 from app.llm.router import LLMRouter
+from app.utils.formatting import normalize_indian_grouping
 
 MAX_TOOL_ROUNDS = 2
 _SENTENCE_BOUNDARY_RE = re.compile(
@@ -376,7 +377,7 @@ class AgentOrchestrator:
                         match = _SENTENCE_BOUNDARY_RE.match(sentence_buf)
                         if not match:
                             break
-                        sent = strip_reasoning_and_markdown(match.group(1))
+                        sent = normalize_indian_grouping(strip_reasoning_and_markdown(match.group(1)))
                         sentence_buf = sentence_buf[match.end() :]
                         if sent and re.search(r"[A-Za-z0-9\u0900-\u097F]", sent):
                             yield _sse(
@@ -396,7 +397,7 @@ class AgentOrchestrator:
                     pending_tool_calls.extend(chunk.tool_calls)
 
             # Flush trailing fragment if no tool calls remain
-            rem = strip_reasoning_and_markdown(sentence_buf)
+            rem = normalize_indian_grouping(strip_reasoning_and_markdown(sentence_buf))
             if rem and not pending_tool_calls and re.search(r"[A-Za-z0-9\u0900-\u097F]", rem):
                 yield _sse(
                     "sentence",
@@ -488,10 +489,12 @@ class AgentOrchestrator:
             if "summary_card" in res:
                 yield _sse("summary_card", res["summary_card"])
 
-        # Enforce voice word-count cap & clean text
-        cleaned_reply = enforce_voice_length(final_text, session.phase.value, max_words=45)
+        # Enforce voice word-count cap & clean text with Indian digit grouping
+        cleaned_reply = normalize_indian_grouping(
+            enforce_voice_length(final_text, session.phase.value, max_words=45)
+        )
         if not cleaned_reply:
-            cleaned_reply = _localized_empty_fallback(session)
+            cleaned_reply = normalize_indian_grouping(_localized_empty_fallback(session))
             yield _sse("token", {"text": cleaned_reply})
             yield _sse(
                 "sentence",

@@ -6,6 +6,7 @@ import re
 from typing import TYPE_CHECKING, Any, Iterable
 
 from app.config import Settings, get_settings
+from app.utils.formatting import format_indian_number, format_inr, normalize_indian_grouping
 
 if TYPE_CHECKING:
     from app.data.context import SellerContext
