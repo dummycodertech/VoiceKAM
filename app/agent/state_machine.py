@@ -194,16 +194,22 @@ def _phase_instruction(
             if top_driver
             else f"{orders_drop} orders were lost"
         )
+        resid_driver = next((d for d in diag.get("drivers", []) if d["driver"] == "unexplained_residual"), None)
+        resid_note = (
+            f" Explicitly mention the unexplained residual (~{resid_driver['share_pct']}%, {resid_driver['lost_orders']} orders) rather than overclaiming certainty."
+            if resid_driver and resid_driver.get("share_pct", 0) >= 10.0
+            else ""
+        )
         missing_note = (
-            " Explicitly mention which columns are 'not assessable with the data provided'."
+            " Also name any missing columns as 'not assessable with the data provided'."
             if missing_fields
             else ""
         )
         cancel_note = f" Cancellation rate is {cancel_curr}%." if cancel_curr is not None else ""
         return (
-            "GOAL: Give 2 ultra-short sentences under 40 words total summarizing the pre-loaded diagnosis: "
+            "GOAL: Give 2 ultra-short sentences under 40 words total using uncertain phrasing ('roughly'): "
             f"(1) Cite exact ASP Rs {asp_curr} and that {top_text}.{cancel_note} "
-            f"(2) Name the secondary driver or unexplained residual honestly,{missing_note} and ask if the seller is ready for the action plan."
+            f"(2) Name the secondary cause.{resid_note}{missing_note} Ask if they are ready for the action plan."
         )
 
     if p == Phase.RECOMMEND:

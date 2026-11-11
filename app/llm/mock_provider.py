@@ -179,7 +179,8 @@ class MockLLMProvider(LLMProvider):
         oos_curr = snap.get("oos_curr")
         cancel_curr = snap.get("cancel_curr_pct")
         missing_signals = snap.get("missing_signals") or []
-        drivers = [d for d in (snap.get("drivers_summary") or []) if d.get("assessable")]
+        drivers = [d for d in (snap.get("drivers_summary") or []) if d.get("assessable") and d.get("driver") != "unexplained_residual"]
+        resid_driver = next((d for d in (snap.get("drivers_summary") or []) if d.get("driver") == "unexplained_residual"), None)
         top_driver = drivers[0] if drivers else None
 
         if is_followup and phase == "GREETING":
@@ -244,9 +245,14 @@ class MockLLMProvider(LLMProvider):
                 if top_driver
                 else f"{orders_drop} fewer orders overall"
             )
+            resid_txt = (
+                f" About {resid_driver['share_pct']}% ({resid_driver['lost_orders']} orders) remains unexplained residual."
+                if resid_driver and float(resid_driver.get("share_pct") or 0) >= 10.0
+                else ""
+            )
             cancel_txt = f", with {cancel_curr}% cancellations" if cancel_curr is not None else ""
             return (
-                f"{salutation}, ASP stayed around Rs {asp:,}, so {top_text}{cancel_txt}. "
+                f"{salutation}, ASP stayed around Rs {asp:,}, so {top_text}{cancel_txt}.{resid_txt} "
                 "Ready for the prioritised action plan?"
             )
 

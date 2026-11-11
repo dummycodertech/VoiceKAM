@@ -70,8 +70,8 @@ async def _drive_conversation(
         (
             "cooperative_detailed",
             [
-                "My sales dropped significantly this month from 400 orders to 270. Can you help me?",
-                "Yes, our 5L Pressure Cooker and Granite Tawa ran out of stock last week.",
+                "My sales dropped significantly this month from 476 orders to 354. Can you help me?",
+                "Yes, our Trail Runner Shoes and Canvas Sneakers ran out of stock last week.",
                 "We also struggled to update stock counts before the afternoon pickup.",
                 "Yes, please check my store data and tell me all the reasons.",
                 "Makes sense, what are the top recommended actions?",

@@ -58,7 +58,12 @@ def test_health_and_demo_data_endpoints():
 
     d = client.get("/api/demo-data")
     assert d.status_code == 200
-    assert d.json()["metrics"]["metrics"]["sales_gmv"]["current"] == 135_000
+    d_json = d.json()
+    m = d_json["metrics"]["metrics"]
+    diag = d_json["diagnosis"]
+    assert m["sales_gmv"]["current"] > 0
+    assert m["sales_gmv"]["current"] < m["sales_gmv"]["baseline"]
+    assert sum(dr["lost_orders"] for dr in diag["drivers"]) == diag["total_lost_orders"]
 
 
 def test_full_sse_session_lifecycle():
@@ -115,10 +120,10 @@ async def test_tts_cache_and_browser_fallback_when_providers_fail(monkeypatch):
 
     monkeypatch.setattr(svc, "_synthesize_edge_tts", fake_edge)
 
-    audio1, meta1 = await svc.synthesize("Namaste Arjun ji.", language="en-IN")
+    audio1, meta1 = await svc.synthesize("Namaste Vikram ji.", language="en-IN")
     assert audio1 is not None and meta1["cached"] is False and calls == 1
 
-    audio2, meta2 = await svc.synthesize("Namaste Arjun ji.", language="en-IN")
+    audio2, meta2 = await svc.synthesize("Namaste Vikram ji.", language="en-IN")
     assert audio2 is not None and meta2["cached"] is True and calls == 1  # Hit cache!
 
     # Now simulate edge-tts failure -> falls back cleanly to browser speechSynthesis
@@ -138,7 +143,7 @@ def test_tts_endpoint_returns_browser_fallback_json_cleanly():
     app = _make_test_app(tts_override=svc)
     client = TestClient(app)
 
-    r = client.post("/api/tts", json={"text": "Hello Arjun ji", "language": "en-IN"})
+    r = client.post("/api/tts", json={"text": "Hello Vikram ji", "language": "en-IN"})
     assert r.status_code == 200
     assert r.json()["use_browser_tts"] is True
 

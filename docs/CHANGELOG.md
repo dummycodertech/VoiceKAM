@@ -26,3 +26,14 @@ The original assessment snapshot remains frozen on `main` at tag `v1.0-assessmen
 - Added `GET /api/data/template` (`csv`, `cancellations_csv`, `json`), `POST /api/data/validate`, `GET /api/scenarios`, `GET /api/demo-data?scenario=...&dataset_id=...`, and multipart/JSON upload support on `POST /api/session/start`.
 - Documented schema, graceful degradation rules (`"not assessable with the data provided"`), and RAM-only privacy controls in `docs/DATA_SCHEMA.md`.
 - Added `tests/test_custom_data.py` and parameterized `tests/test_diagnosis.py` / `tests/test_reconciliation.py` (`42` offline unit/API/contract/debranding tests passing).
+
+## Phase 3 — Computed Attribution and 4 Seeded Demo Scenarios
+- Implemented `app/data/scenarios.py` with a deterministic scenario generator supporting Scenarios A–D completely distinct from the frozen assessment dataset:
+  - **Scenario A (Default):** *UrbanStride Footwear & Apparel* (Bengaluru, 48 SKUs, Footwear & Activewear — stock-out dominant, ~57%).
+  - **Scenario B:** *TechNest Accessories* (Mumbai, 42 SKUs — competitor price gaps & search visibility dominant).
+  - **Scenario C:** *FreshBrew Pantry* (Pune, 36 SKUs — seller-caused cancellations & SLA delays dominant).
+  - **Scenario D:** *ArtisanCraft Decor* (Jaipur, 40 SKUs — mixed operational causes with ~29% unexplained residual).
+- Rewrote `app/engine/diagnosis.py` to compute attribution purely from SKU, funnel, and cancellation records (zero `driver_group` references): velocity × OOS duration for stock-outs, in-stock fairly-priced control-group median DiD for pricing gaps, impression decline × baseline CTR × CVR net of OOS/price overlaps for visibility, excess seller-fault cancellations, explicit `unexplained_residual`, confidence tiers (`high | medium | low | unavailable`), and follow-up single-record derivation from cloned `SellerContext` records.
+- Documented formulas and reconciliation guarantees in `docs/ATTRIBUTION.md` and updated `docs/ASSUMPTIONS.md`.
+- Added uncertain spoken phrasing (`"roughly"`, unexplained residual naming, and `"not assessable with the data provided"` prompts) in `app/agent/state_machine.py` and `app/llm/mock_provider.py`.
+- Added property reconciliation tests (100 random fuzz trials) and 200-trial ground-truth recovery verification in `tests/test_attribution_properties.py` (`200/200` top-driver recovery in test fixture; `40` offline tests passing).

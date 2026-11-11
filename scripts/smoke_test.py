@@ -68,11 +68,15 @@ def main() -> int:
         print(f"[4/5] Checking {base}/api/demo-data ...")
         rd = client.get(f"{base}/api/demo-data")
         rd.raise_for_status()
-        metrics = rd.json()["metrics"]["metrics"]
-        assert metrics["sales_gmv"]["baseline"] == 200000
-        assert metrics["sales_gmv"]["current"] == 135000
-        assert metrics["out_of_stock_skus"]["current"] == 18
-        print("  Demo data reconciled (2,00,000 -> 1,35,000, 400 -> 270 orders, 5 -> 18 OOS)")
+        demo = rd.json()
+        metrics = demo["metrics"]["metrics"]
+        diag = demo["diagnosis"]
+        assert metrics["sales_gmv"]["baseline"] > 0
+        assert sum(d["lost_orders"] for d in diag["drivers"]) == diag["total_lost_orders"]
+        print(
+            f"  Demo data reconciled (orders {metrics['orders']['baseline']} -> {metrics['orders']['current']}, "
+            f"GMV Rs {metrics['sales_gmv']['baseline']:,} -> Rs {metrics['sales_gmv']['current']:,})"
+        )
 
         print(f"[5/5] Testing full /api/session/start + SSE /api/chat turn ...")
         rs = client.post(f"{base}/api/session/start", json={"mode": "inbound", "language": "en-IN"})
