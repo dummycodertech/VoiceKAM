@@ -6,14 +6,47 @@
 <title>VoiceKAM — Metis</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='9' fill='%23151416'/><circle cx='16' cy='16' r='7' fill='%23a37c95'/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/styles.css">
+<link rel="stylesheet" href="/static/landing.css">
 </head>
 <body data-completed-streams="0">
 <header class="top">
-  <div class="brand"><span class="mark" aria-hidden="true"></span><b id="brandName">VoiceKAM</b><span id="brandSub" class="sub">Account intelligence assistant</span></div>
-  <div class="badges"><span id="ttsBadge" class="chip">TTS: Auto</span></div>
-  <nav id="phaseStrip" class="phases" aria-label="Call progress">
+  <a class="brand" href="#top"><span class="mark" aria-hidden="true"></span><b id="brandName">VoiceKAM</b><span id="brandSub" class="sub">Account intelligence assistant</span></a>
+  <nav class="links" aria-label="Sections"><a href="#demo">Live demo</a><a href="#how">How it works</a><a href="#results">Results</a><a href="#limits">Limits</a></nav>
+  <div class="badges"><span id="ttsBadge" class="chip">TTS: Auto</span><a class="btn primary sm" href="#demo">Try a call</a></div>
+</header>
+<section class="hero" id="top">
+  <div class="hero-copy">
+    <p class="eyebrow">Voice-first AI account manager</p>
+    <h1>Ask out loud why your sales dropped.</h1>
+    <p class="lede">A voice agent that checks orders, stock, pricing and cancellations, shows you the evidence, and holds you to dated next steps.</p>
+    <div class="cta"><a class="btn primary lg" href="#demo">Start a live call</a><a class="btn ghost lg" href="#how">See how it works</a></div>
+    <p class="fine">Works in Chrome or Edge. All store data is synthetic.</p>
+  </div>
+  <aside class="glass" aria-label="Demo stores">
+    <p class="glass-head">Pick a store to call about</p>
+    <div id="heroStores" class="stores"><p class="empty">Loading demo stores…</p></div>
+  </aside>
+  <ul class="perks">
+    <li><b>Voice first</b>Speak, interrupt, answer back</li>
+    <li><b>Numbers audited</b>Every figure traced to a tool result</li>
+    <li><b>Three languages</b>English, Hinglish, Hindi</li>
+    <li><b>Runs on free tiers</b>No paid APIs anywhere</li>
+    <li><b>Bring your data</b>Upload a SKU CSV</li>
+  </ul>
+</section>
+<section class="sec" id="how">
+  <h2>Three steps, one conversation</h2>
+  <ol class="steps">
+    <li><span>01</span><b>You talk</b><p>Describe the problem in plain words. The agent asks only the few questions the data can't answer.</p></li>
+    <li><span>02</span><b>It checks the data</b><p>Stock-outs, price gaps, visibility and cancellations are computed in code. The language model never does the arithmetic.</p></li>
+    <li><span>03</span><b>You commit</b><p>Pick actions, set dates, get a written summary, then a follow-up call checks what moved.</p></li>
+  </ol>
+</section>
+<section class="demo" id="demo">
+  <div class="demo-head"><h2>Try a live call</h2><p>Allow the microphone when asked. Prefer typing? Use “Type instead”.</p></div>
+  <div class="demo-bar"><nav id="phaseStrip" class="phases" aria-label="Call progress">
     <span class="phase-pill active" data-phase="GREETING">Greeting</span>
     <span class="phase-pill" data-phase="UNDERSTAND">Understand</span>
     <span class="phase-pill" data-phase="CLARIFY">Clarify</span>
@@ -23,8 +56,7 @@
     <span class="phase-pill" data-phase="COMMIT">Commit</span>
     <span class="phase-pill" data-phase="SUMMARY">Summary</span>
     <span class="phase-pill" data-phase="CLOSE">Close</span>
-  </nav>
-</header>
+  </nav></div>
 <div id="browserBanner" class="banner hidden" role="status">Live speech needs Chrome or Edge. In other browsers, type your lines in the test box.</div>
 <div id="errorBanner" class="banner bad hidden" role="alert"><span id="errorBannerText"></span><button id="btnDismissError" class="btn ghost sm" type="button">Dismiss</button></div>
 <main class="grid">
@@ -101,7 +133,29 @@
     <div id="summaryCardSection" class="hidden"></div>
   </section>
 </main>
+</section>
+<section class="sec" id="results">
+  <h2>Measured, with the caveats</h2>
+  <!-- keep in sync with docs/EVALUATION.md -->
+  <div class="stats">
+    <div><b>604 / 604</b><span>spoken numbers matched a tool result</span></div>
+    <div><b>93.8%</b><span>of 48 scripted calls reached the summary</span></div>
+    <div><b>2.0 s / 4.0 s</b><span>median to first word / first sound</span></div>
+    <div><b>4.6 / 5</b><span>LLM-judged quality, 43 calls</span></div>
+  </div>
+  <p class="foot-note">Live run on synthetic stores: 6 scripted seller personas × 4 scenarios × 2 runs. Latency was measured with free-tier models and is slower than a natural phone call. Details in docs/EVALUATION.md.</p>
+</section>
+<section class="sec" id="limits">
+  <h2>What it does not claim</h2>
+  <ul class="limits">
+    <li>The stores are synthetic. Attribution is validated against planted causes, not real marketplace data.</li>
+    <li>The number audit checks that spoken figures appear in the tool results. It flags mismatches; it does not prove every figure is used correctly.</li>
+    <li>Free hosting sleeps when idle, so the first request can take about a minute.</li>
+    <li>Live speech input needs Chrome or Edge. Do not upload real or confidential seller data.</li>
+  </ul>
+</section>
 <footer class="foot" id="footerNotice">VoiceKAM open-source prototype. Not affiliated with any marketplace.</footer>
 <script type="module" src="/static/app.js"></script>
+<script type="module" src="/static/landing.js"></script>
 </body>
 </html>
