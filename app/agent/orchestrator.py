@@ -23,7 +23,6 @@ from app.agent.state_machine import (
     tools_for_phase,
 )
 from app.config import get_settings
-from app.data.seed_data import SELLER_PROFILE
 from app.engine.tools import execute_tool
 from app.llm.base import CanonicalMessage, ToolCallRequest
 from app.llm.router import LLMRouter
@@ -190,8 +189,8 @@ class AgentOrchestrator:
         if session.mode == "inbound":
             # Instant zero-LLM greeting for Inbound mode (low latency, warm persona)
             settings = get_settings()
-            salutation = SELLER_PROFILE["salutation"]
-            shop_name = SELLER_PROFILE["shop_name"]
+            salutation = session.seller_context.profile.salutation
+            shop_name = session.seller_context.profile.shop_name
             if session.language == "hi-IN":
                 greeting = (
                     f"नमस्ते {salutation}, मैं {settings.agent_name_devanagari} हूँ, आपकी मार्केटप्लेस अकाउंट मैनेजर। "
@@ -402,7 +401,7 @@ class AgentOrchestrator:
         # Enforce voice word-count cap & clean text
         cleaned_reply = enforce_voice_length(final_text, session.phase.value, max_words=45)
         if not cleaned_reply:
-            salutation = SELLER_PROFILE["salutation"]
+            salutation = session.seller_context.profile.salutation
             if session.commitments and session.phase == Phase.COMMIT:
                 cleaned_reply = f"Got it, {salutation}. I have noted your commitment with due dates and follow-up targets. Shall I send the summary?"
             elif session.summary_card and session.phase == Phase.SUMMARY:

@@ -1,13 +1,16 @@
-"""In-memory per-session state that survives mid-call LLM provider switches."""
+"""In-memory per-session state with SellerContext, TTL expiry, and bounded LRU eviction."""
 
 from __future__ import annotations
 
+import time
 import uuid
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Literal
 
-from app.data.seed_data import FOLLOWUP_SNAPSHOT, SnapshotType
+from app.data.context import SellerContext, SnapshotType
+from app.data.seed_data import get_scenario_context
 from app.llm.base import CanonicalMessage
 
 
@@ -30,6 +33,7 @@ LanguageCode = Literal["en-IN", "hi-IN", "hinglish"]
 @dataclass
 class SessionState:
     session_id: str
+    seller_context: SellerContext = field(default_factory=get_scenario_context)
     mode: CallMode = "inbound"
     snapshot: SnapshotType = "current"
     language: LanguageCode = "en-IN"
@@ -52,6 +56,8 @@ class SessionState:
     failover_events: list[dict[str, str]] = field(default_factory=list)
     latency_history: list[dict[str, Any]] = field(default_factory=list)
     ungrounded_warnings: list[dict[str, Any]] = field(default_factory=list)
+    created_at: float = field(default_factory=time.monotonic)
+    last_accessed: float = field(default_factory=time.monotonic)
 
     def to_public_dict(self) -> dict[str, Any]:
         return {
@@ -62,6 +68,7 @@ class SessionState:
             "phase": self.phase.value,
             "turn_count": self.turn_count,
             "clarify_questions_asked": self.clarify_questions_asked,
+            "dataset": self.seller_context.summary_dict(),
             "tool_history": self.tool_history,
             "commitments": self.commitments,
             "prior_commitments": self.prior_commitments,
@@ -75,44 +82,75 @@ class SessionState:
 
 
 class SessionStore:
-    """Thread/async-safe in-memory session registry (no external DB needed)."""
+    """In-memory bounded session registry with TTL expiry and LRU eviction (no disk/DB)."""
 
-    def __init__(self) -> None:
-        self._sessions: dict[str, SessionState] = {}
+    def __init__(self, ttl_seconds: int = 7200, max_sessions: int = 200) -> None:
+        self.ttl_seconds = max(60, int(ttl_seconds))
+        self.max_sessions = max(10, int(max_sessions))
+        self._sessions: OrderedDict[str, SessionState] = OrderedDict()
+
+    def _evict_expired_and_overflow(self, now: float | None = None) -> None:
+        ts = time.monotonic() if now is None else now
+        expired = [k for k, v in self._sessions.items() if (ts - v.last_accessed) > self.ttl_seconds]
+        for k in expired:
+            self._sessions.pop(k, None)
+        while len(self._sessions) > self.max_sessions:
+            self._sessions.popitem(last=False)
 
     def create(
         self,
         mode: CallMode = "inbound",
         language: LanguageCode = "en-IN",
         prior_session_id: str | None = None,
+        seller_context: SellerContext | None = None,
     ) -> SessionState:
+        now = time.monotonic()
+        self._evict_expired_and_overflow(now)
+
         session_id = uuid.uuid4().hex[:12]
         snapshot: SnapshotType = "followup" if mode == "followup" else "current"
         prior_commitments: list[dict[str, Any]] = []
 
+        resolved_context = seller_context
+        prev = self._sessions.get(prior_session_id) if prior_session_id else None
+        if prev is not None and resolved_context is None:
+            resolved_context = prev.seller_context
+        if resolved_context is None:
+            resolved_context = get_scenario_context()
+
         if mode == "followup":
-            if prior_session_id and prior_session_id in self._sessions:
-                prev = self._sessions[prior_session_id]
-                if prev.commitments:
-                    prior_commitments = [
-                        {**c, "status": "partially_done"} for c in prev.commitments
-                    ]
-            if not prior_commitments:
+            if prev is not None and prev.commitments:
+                prior_commitments = [{**c, "status": "partially_done"} for c in prev.commitments]
+            elif resolved_context.followup and resolved_context.followup.default_prior_commitments:
                 prior_commitments = [
-                    dict(item) for item in FOLLOWUP_SNAPSHOT["default_prior_commitments"]
+                    dict(item) for item in resolved_context.followup.default_prior_commitments
                 ]
 
         state = SessionState(
             session_id=session_id,
+            seller_context=resolved_context,
             mode=mode,
             snapshot=snapshot,
             language=language,
             phase=Phase.GREETING,
             prior_commitments=prior_commitments,
+            created_at=now,
+            last_accessed=now,
         )
         self._sessions[session_id] = state
+        self._evict_expired_and_overflow(now)
         return state
 
     def get(self, session_id: str) -> SessionState | None:
-        return self._sessions.get(session_id)
+        now = time.monotonic()
+        self._evict_expired_and_overflow(now)
+        state = self._sessions.get(session_id)
+        if state is None:
+            return None
+        state.last_accessed = now
+        self._sessions.move_to_end(session_id)
+        return state
 
+    def __len__(self) -> int:
+        self._evict_expired_and_overflow()
+        return len(self._sessions)

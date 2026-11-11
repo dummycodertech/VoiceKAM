@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -18,7 +18,15 @@ from pydantic import BaseModel
 from app.agent.orchestrator import AgentOrchestrator
 from app.agent.session import CallMode, LanguageCode, SessionStore
 from app.config import Settings, get_settings
-from app.data.seed_data import SELLER_PROFILE
+from app.data.context import SellerContext
+from app.data.seed_data import get_scenario_context, list_scenarios
+from app.data.upload import (
+    DatasetValidationError,
+    UploadedDatasetStore,
+    build_template_payload,
+    parse_uploaded_csv,
+    parse_uploaded_json,
+)
 from app.engine import diagnosis
 from app.llm.base import AllProvidersUnavailableError
 from app.llm.router import LLMRouter
@@ -34,6 +42,8 @@ class StartSessionRequest(BaseModel):
     mode: CallMode = "inbound"
     language: LanguageCode = "en-IN"
     prior_session_id: str | None = None
+    scenario_id: str | None = None
+    dataset_id: str | None = None
 
 
 class ChatRequest(BaseModel):
@@ -56,6 +66,21 @@ def _format_sse(event: str, data: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
+def _build_demo_payload(ctx: SellerContext, snapshot: str = "current") -> dict[str, Any]:
+    snap = "followup" if snapshot == "followup" else "current"
+    return {
+        "overview": diagnosis.get_seller_overview(ctx, snap),
+        "metrics": diagnosis.compute_headline_metrics(ctx, snap),
+        "diagnosis": diagnosis.run_diagnosis(ctx, snap),
+        "oos_skus": diagnosis.get_out_of_stock_skus(ctx, limit=5, snapshot=snap),
+        "cancellations": diagnosis.get_cancellation_breakdown(ctx, snap),
+        "pricing": diagnosis.get_pricing_gaps(ctx, snap),
+        "funnel": diagnosis.get_visibility_funnel(ctx, snap),
+        "action_plan": diagnosis.build_action_plan(ctx, snap),
+        "dataset": ctx.summary_dict(),
+    }
+
+
 def create_app(
     settings_override: Settings | None = None,
     router_override: LLMRouter | None = None,
@@ -63,7 +88,14 @@ def create_app(
     skip_startup_probes: bool = False,
 ) -> FastAPI:
     settings = settings_override or get_settings()
-    store = SessionStore()
+    store = SessionStore(
+        ttl_seconds=settings.session_ttl_seconds,
+        max_sessions=settings.max_sessions,
+    )
+    dataset_store = UploadedDatasetStore(
+        ttl_seconds=settings.session_ttl_seconds,
+        max_entries=settings.max_sessions,
+    )
     router = router_override or LLMRouter.from_settings(settings)
     tts_service = tts_override or TTSService(settings)
     orchestrator = AgentOrchestrator(router=router)
@@ -73,20 +105,20 @@ def create_app(
         if not skip_startup_probes:
             await router.initialize_and_smoke_test(settings)
             await tts_service.startup_smoke_test()
-            # Pre-warm TTS cache for common greeting/filler lines (best effort)
             if settings.tts_cache_enabled:
+                default_profile = get_scenario_context().profile
                 warmup_lines = [
                     (
-                        f"Namaste {SELLER_PROFILE['salutation']}, I am {settings.agent_name}, "
-                        f"your marketplace account manager. How can I help {SELLER_PROFILE['shop_name']} today?",
+                        f"Namaste {default_profile.salutation}, I am {settings.agent_name}, "
+                        f"your marketplace account manager. How can I help {default_profile.shop_name} today?",
                         "en-IN",
                     ),
                     (
-                        f"Ji {SELLER_PROFILE['salutation']}, main {settings.agent_name} bol rahi hoon, ek second aapka data check karti hoon.",
+                        f"Ji {default_profile.salutation}, main {settings.agent_name} bol rahi hoon, ek second aapka data check karti hoon.",
                         "hinglish",
                     ),
                     (
-                        f"नमस्ते {SELLER_PROFILE['salutation']}, मैं {settings.agent_name_devanagari} बोल रही हूँ, एक सेकंड आपका डेटा देख रही हूँ।",
+                        f"नमस्ते {default_profile.salutation}, मैं {settings.agent_name_devanagari} बोल रही हूँ, एक सेकंड आपका डेटा देख रही हूँ।",
                         "hi-IN",
                     ),
                 ]
@@ -100,6 +132,7 @@ def create_app(
     app = FastAPI(title=f"{settings.project_name} (Prototype - Mock Data)", lifespan=lifespan)
     app.state.settings = settings
     app.state.store = store
+    app.state.dataset_store = dataset_store
     app.state.router = router
     app.state.tts_service = tts_service
     app.state.orchestrator = orchestrator
@@ -150,34 +183,182 @@ def create_app(
             "features": {
                 "enable_gemini_live": settings.enable_gemini_live,
                 "whisper_stt_fallback": bool(settings.groq_api_key.strip()),
+                "max_upload_skus": settings.max_upload_skus,
+                "max_upload_bytes": settings.max_upload_bytes,
             },
         }
 
-    @app.get("/api/demo-data")
-    async def demo_data(snapshot: str = "current") -> dict[str, Any]:
-        snap = "followup" if snapshot == "followup" else "current"
+    @app.get("/api/scenarios")
+    async def scenarios() -> dict[str, Any]:
+        return {"scenarios": list_scenarios()}
+
+    @app.get("/api/data/template")
+    async def download_data_template(format: str = "csv"):
+        content, media_type, filename = build_template_payload(format)
+        return Response(
+            content=content,
+            media_type=media_type,
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    async def _parse_uploaded_form_or_json(request: Request) -> tuple[SellerContext, dict[str, Any]]:
+        content_type = (request.headers.get("content-type") or "").lower()
+        if "multipart/form-data" in content_type:
+            form = await request.form()
+            meta = {
+                k: str(form.get(k) or "")
+                for k in (
+                    "seller_name",
+                    "salutation",
+                    "shop_name",
+                    "city",
+                    "category",
+                    "period_prev_label",
+                    "period_curr_label",
+                )
+                if form.get(k)
+            }
+            main_file = form.get("file")
+            if main_file is None or not hasattr(main_file, "read"):
+                raise DatasetValidationError(["Please select a CSV or JSON file to upload."])
+            raw_bytes = await main_file.read()
+            if len(raw_bytes) > settings.max_upload_bytes:
+                raise DatasetValidationError(
+                    [f"Uploaded file exceeds the {settings.max_upload_bytes // 1024} KB size limit."]
+                )
+            filename = str(getattr(main_file, "filename", "") or "").lower()
+            cancel_file = form.get("cancellations_file")
+            cancel_bytes: bytes | None = None
+            if cancel_file is not None and hasattr(cancel_file, "read"):
+                cancel_bytes = await cancel_file.read()
+                if len(cancel_bytes) > settings.max_upload_bytes:
+                    raise DatasetValidationError(["Cancellations CSV exceeds the maximum allowed size."])
+
+            if filename.endswith(".json") or raw_bytes.lstrip().startswith((b"{", b"[")):
+                ctx = parse_uploaded_json(raw_bytes, settings=settings)
+            else:
+                ctx = parse_uploaded_csv(
+                    raw_bytes,
+                    cancellations_csv_bytes=cancel_bytes,
+                    seller_meta=meta,
+                    settings=settings,
+                )
+            return ctx, {str(k): v for k, v in form.items() if isinstance(v, str)}
+
+        raw_body = await request.body()
+        if len(raw_body) > settings.max_upload_bytes:
+            raise DatasetValidationError(
+                [f"Request JSON payload exceeds the {settings.max_upload_bytes // 1024} KB size limit."]
+            )
+        ctx = parse_uploaded_json(raw_body, settings=settings)
+        return ctx, {}
+
+    @app.post("/api/data/validate")
+    async def validate_uploaded_data(request: Request):
+        try:
+            ctx, _ = await _parse_uploaded_form_or_json(request)
+        except DatasetValidationError as exc:
+            return JSONResponse({"valid": False, "errors": exc.errors}, status_code=422)
+
+        dataset_id = dataset_store.put(ctx)
+        diag = diagnosis.run_diagnosis(ctx, "current")
         return {
-            "overview": diagnosis.get_seller_overview(snap),
-            "metrics": diagnosis.compute_headline_metrics(snap),
-            "diagnosis": diagnosis.run_diagnosis(snap),
-            "oos_skus": diagnosis.get_out_of_stock_skus(limit=5, snapshot=snap),
-            "cancellations": diagnosis.get_cancellation_breakdown(snap),
-            "pricing": diagnosis.get_pricing_gaps(snap),
-            "funnel": diagnosis.get_visibility_funnel(snap),
-            "action_plan": diagnosis.build_action_plan(snap),
+            "valid": True,
+            "dataset_id": dataset_id,
+            "summary": ctx.summary_dict(),
+            "completeness": diag["completeness"],
+            "diagnosis_preview": {
+                "total_lost_orders": diag["total_lost_orders"],
+                "total_lost_revenue": diag["total_lost_revenue"],
+                "missing_signals": diag["missing_signals"],
+            },
+            "errors": [],
         }
 
+    def _resolve_context(
+        scenario: str | None = None,
+        dataset_id: str | None = None,
+    ) -> SellerContext:
+        if dataset_id:
+            ctx = dataset_store.get(dataset_id)
+            if ctx is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Uploaded dataset was not found or expired with the session TTL. Please re-upload.",
+                )
+            return ctx
+        return get_scenario_context(scenario)
+
+    @app.get("/api/demo-data")
+    async def demo_data(
+        snapshot: str = "current",
+        scenario: str | None = None,
+        dataset_id: str | None = None,
+    ) -> dict[str, Any]:
+        ctx = _resolve_context(scenario=scenario, dataset_id=dataset_id)
+        return _build_demo_payload(ctx, snapshot=snapshot)
+
     @app.post("/api/session/start")
-    async def start_session(req: StartSessionRequest) -> dict[str, Any]:
+    async def start_session(request: Request):
+        content_type = (request.headers.get("content-type") or "").lower()
+        mode: CallMode = "inbound"
+        language: LanguageCode = "en-IN"
+        prior_session_id: str | None = None
+        scenario_id: str | None = None
+        dataset_id: str | None = None
+        resolved_ctx: SellerContext | None = None
+
+        if "multipart/form-data" in content_type:
+            form = await request.form()
+            mode_val = str(form.get("mode") or "inbound")
+            if mode_val in ("inbound", "proactive", "followup"):
+                mode = mode_val  # type: ignore[assignment]
+            lang_val = str(form.get("language") or "en-IN")
+            if lang_val in ("en-IN", "hi-IN", "hinglish"):
+                language = lang_val  # type: ignore[assignment]
+            prior_session_id = str(form.get("prior_session_id")) if form.get("prior_session_id") else None
+            scenario_id = str(form.get("scenario_id")) if form.get("scenario_id") else None
+            dataset_id = str(form.get("dataset_id")) if form.get("dataset_id") else None
+
+            if form.get("file") is not None:
+                try:
+                    resolved_ctx, _ = await _parse_uploaded_form_or_json(request)
+                except DatasetValidationError as exc:
+                    return JSONResponse(
+                        {"valid": False, "detail": exc.errors[0], "errors": exc.errors},
+                        status_code=422,
+                    )
+        else:
+            raw_body = await request.body()
+            payload_obj: dict[str, Any] = {}
+            if raw_body.strip():
+                try:
+                    payload_obj = json.loads(raw_body.decode("utf-8"))
+                except Exception as exc:
+                    raise HTTPException(status_code=400, detail=f"Invalid JSON request: {exc}") from exc
+            req = StartSessionRequest(**payload_obj)
+            mode = req.mode
+            language = req.language
+            prior_session_id = req.prior_session_id
+            scenario_id = req.scenario_id
+            dataset_id = req.dataset_id
+
+        if resolved_ctx is None:
+            if dataset_id:
+                resolved_ctx = _resolve_context(dataset_id=dataset_id)
+            elif scenario_id:
+                resolved_ctx = _resolve_context(scenario=scenario_id)
+
         session = store.create(
-            mode=req.mode,
-            language=req.language,
-            prior_session_id=req.prior_session_id,
+            mode=mode,
+            language=language,
+            prior_session_id=prior_session_id,
+            seller_context=resolved_ctx,
         )
         return {
             "session_id": session.session_id,
             "session": session.to_public_dict(),
-            "demo_data": await demo_data(snapshot=session.snapshot),
+            "demo_data": _build_demo_payload(session.seller_context, snapshot=session.snapshot),
         }
 
     @app.post("/api/session/{session_id}/greeting")
@@ -324,4 +505,3 @@ def create_app(
 
 
 app = create_app()
-

@@ -18,3 +18,11 @@ The original assessment snapshot remains frozen on `main` at tag `v1.0-assessmen
 - Removed assessment-specific docs and old captures (`docs/NOTE.md`, `docs/DEMO_SCRIPT.md`, `docs/INTERVIEW_PREP.md`, `docs/FRONTEND_HANDOFF_part1.md`, `docs/FRONTEND_HANDOFF_part2.md`, `docs/captures/*`) from `standalone` (preserved on `main` at `v1.0-assessment`).
 - Added `tests/test_debranding.py` asserting zero legacy brand/persona strings repo-wide and single-source branding config.
 - Added clean historyless export scripts (`scripts/export_clean_repo.sh` and `scripts/export_clean_repo.ps1`).
+
+## Phase 2 — SellerContext and Custom Data
+- Added `app/data/context.py` defining per-session immutable domain models (`SellerContext`, `SellerProfile`, `SkuRecord`, `CancellationRow`, `VisibilityFunnel`, `DataCompleteness`, `FollowupAdjustment`) and `compute_data_completeness()`.
+- Refactored `app/agent/session.py` (`SessionState.seller_context`, TTL expiry, LRU bounded eviction), `app/engine/diagnosis.py`, `app/engine/tools.py`, `app/agent/state_machine.py`, `app/agent/orchestrator.py`, `app/llm/mock_provider.py`, and `app/main.py` so zero global seller constants are imported outside `app/data/seed_data.py`.
+- Implemented strict RAM-only CSV and JSON upload validation in `app/data/upload.py` (max 1 MB / 2,000 SKUs, formula-injection blocking for leading `= + - @ \t \r`, HTML stripping, duplicate `sku_id` detection, bounded TTL `UploadedDatasetStore`).
+- Added `GET /api/data/template` (`csv`, `cancellations_csv`, `json`), `POST /api/data/validate`, `GET /api/scenarios`, `GET /api/demo-data?scenario=...&dataset_id=...`, and multipart/JSON upload support on `POST /api/session/start`.
+- Documented schema, graceful degradation rules (`"not assessable with the data provided"`), and RAM-only privacy controls in `docs/DATA_SCHEMA.md`.
+- Added `tests/test_custom_data.py` and parameterized `tests/test_diagnosis.py` / `tests/test_reconciliation.py` (`42` offline unit/API/contract/debranding tests passing).

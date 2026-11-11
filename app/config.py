@@ -65,6 +65,12 @@ class Settings(BaseSettings):
     enable_gemini_live: bool = False
     allow_mock_llm: bool = False
 
+    # Upload & Session Constraints
+    max_upload_skus: int = 2000
+    max_upload_bytes: int = 1_048_576
+    session_ttl_seconds: int = 7200
+    max_sessions: int = 200
+
     def groq_model_list(self) -> list[str]:
         return [m.strip() for m in self.groq_models.split(",") if m.strip()]
 

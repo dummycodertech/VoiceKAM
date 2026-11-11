@@ -6,10 +6,17 @@ cancellation, and funnel views.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Literal
 
-SnapshotType = Literal["current", "followup"]
+from app.data.context import (
+    CancellationRow,
+    FollowupAdjustment,
+    SellerContext,
+    SellerProfile,
+    SkuRecord,
+    SnapshotType,
+    VisibilityFunnel,
+)
 
 DATA_SEED = 42
 
@@ -26,20 +33,10 @@ SELLER_PROFILE = {
 }
 
 
-@dataclass(frozen=True)
-class SkuRecord:
-    sku_id: str
-    name: str
-    category: str
-    price: int
-    competitor_lowest_price: int
-    last_month_orders: int
-    this_month_orders: int
-    last_month_oos: bool
-    this_month_oos: bool
-    days_oos_this_month: int
-    stock_qty: int
-    driver_group: str  # chronic_oos | newly_oos_top | newly_oos_tail | overpriced | visibility_sla | stable
+# Legacy SkuRecord alias now lives cleanly in app.data.context.SkuRecord
+
+def _legacy_unused_placeholder() -> None:
+    pass
 
 
 def build_sku_catalog() -> list[SkuRecord]:
@@ -62,12 +59,11 @@ def build_sku_catalog() -> list[SkuRecord]:
                 category=cat,
                 price=price,
                 competitor_lowest_price=comp,
-                last_month_orders=0,
-                this_month_orders=0,
-                last_month_oos=True,
-                this_month_oos=True,
-                days_oos_this_month=30,
-                stock_qty=0,
+                orders_prev=0,
+                orders_curr=0,
+                days_out_of_stock_prev=30,
+                days_out_of_stock_curr=30,
+                stock_qty_curr=0,
                 driver_group="chronic_oos",
             )
         )
@@ -88,12 +84,11 @@ def build_sku_catalog() -> list[SkuRecord]:
                 category=cat,
                 price=price,
                 competitor_lowest_price=comp,
-                last_month_orders=last_o,
-                this_month_orders=curr_o,
-                last_month_oos=False,
-                this_month_oos=True,
-                days_oos_this_month=days_oos,
-                stock_qty=0,
+                orders_prev=last_o,
+                orders_curr=curr_o,
+                days_out_of_stock_prev=0,
+                days_out_of_stock_curr=days_oos,
+                stock_qty_curr=0,
                 driver_group="newly_oos_top",
             )
         )
@@ -117,12 +112,11 @@ def build_sku_catalog() -> list[SkuRecord]:
                 category=cat,
                 price=price,
                 competitor_lowest_price=comp,
-                last_month_orders=last_o,
-                this_month_orders=curr_o,
-                last_month_oos=False,
-                this_month_oos=True,
-                days_oos_this_month=days_oos,
-                stock_qty=0,
+                orders_prev=last_o,
+                orders_curr=curr_o,
+                days_out_of_stock_prev=0,
+                days_out_of_stock_curr=days_oos,
+                stock_qty_curr=0,
                 driver_group="newly_oos_tail",
             )
         )
@@ -141,12 +135,11 @@ def build_sku_catalog() -> list[SkuRecord]:
                 category=cat,
                 price=price,
                 competitor_lowest_price=comp,
-                last_month_orders=last_o,
-                this_month_orders=curr_o,
-                last_month_oos=False,
-                this_month_oos=False,
-                days_oos_this_month=0,
-                stock_qty=stock,
+                orders_prev=last_o,
+                orders_curr=curr_o,
+                days_out_of_stock_prev=0,
+                days_out_of_stock_curr=0,
+                stock_qty_curr=stock,
                 driver_group="overpriced",
             )
         )
@@ -175,12 +168,11 @@ def build_sku_catalog() -> list[SkuRecord]:
                 category=cat,
                 price=price,
                 competitor_lowest_price=comp,
-                last_month_orders=last_o,
-                this_month_orders=curr_o,
-                last_month_oos=False,
-                this_month_oos=False,
-                days_oos_this_month=0,
-                stock_qty=stock,
+                orders_prev=last_o,
+                orders_curr=curr_o,
+                days_out_of_stock_prev=0,
+                days_out_of_stock_curr=0,
+                stock_qty_curr=stock,
                 driver_group="visibility_sla",
             )
         )
@@ -222,12 +214,11 @@ def build_sku_catalog() -> list[SkuRecord]:
                 category=cat,
                 price=price,
                 competitor_lowest_price=comp,
-                last_month_orders=orders,
-                this_month_orders=orders,
-                last_month_oos=False,
-                this_month_oos=False,
-                days_oos_this_month=0,
-                stock_qty=stock,
+                orders_prev=orders,
+                orders_curr=orders,
+                days_out_of_stock_prev=0,
+                days_out_of_stock_curr=0,
+                stock_qty_curr=stock,
                 driver_group="stable",
             )
         )
@@ -348,4 +339,101 @@ FOLLOWUP_SNAPSHOT = {
         "monthly_sales_pace_target": 180000,
     },
 }
+
+
+def build_seed_seller_context() -> SellerContext:
+    """Wrap the Phase 2 baseline fixture into a per-session SellerContext instance."""
+    profile = SellerProfile(
+        seller_id=SELLER_PROFILE["seller_id"],
+        seller_name=SELLER_PROFILE["seller_name"],
+        salutation=SELLER_PROFILE["salutation"],
+        shop_name=SELLER_PROFILE["shop_name"],
+        city=SELLER_PROFILE["city"],
+        category=SELLER_PROFILE["category"],
+        tenure_months=SELLER_PROFILE["tenure_months"],
+        scenario_id="A",
+        scenario_title="Metro Home & Kitchen (Stock-out Dominant)",
+        scenario_description="Synthetic 60-SKU seller fixture undergoing Phase 2 SellerContext migration.",
+        is_custom_upload=False,
+        prototype_notice=SELLER_PROFILE["prototype_notice"],
+    )
+    cancellations = [
+        CancellationRow(
+            reason_key="seller_stock_unavailable",
+            label="Seller cancelled - stock unavailable",
+            count_prev=6,
+            count_curr=14,
+            is_seller_fault=True,
+        ),
+        CancellationRow(
+            reason_key="dispatch_sla_breach",
+            label="Auto-cancelled - dispatch SLA delay",
+            count_prev=5,
+            count_curr=9,
+            is_seller_fault=True,
+        ),
+        CancellationRow(
+            reason_key="buyer_initiated",
+            label="Buyer initiated cancellation",
+            count_prev=15,
+            count_curr=11,
+            is_seller_fault=False,
+        ),
+        CancellationRow(
+            reason_key="courier_address_issue",
+            label="Courier / address / COD issue",
+            count_prev=6,
+            count_curr=4,
+            is_seller_fault=False,
+        ),
+    ]
+    funnel = VisibilityFunnel(
+        impressions_prev=VISIBILITY_FUNNEL["last_month"]["impressions"],
+        impressions_curr=VISIBILITY_FUNNEL["this_month"]["impressions"],
+        clicks_prev=VISIBILITY_FUNNEL["last_month"]["clicks"],
+        clicks_curr=VISIBILITY_FUNNEL["this_month"]["clicks"],
+    )
+    followup = FollowupAdjustment(
+        days_elapsed=3,
+        label=FOLLOWUP_SNAPSHOT["label"],
+        restocked_skus={
+            "HK-006": {"days_out_of_stock_curr": 0, "stock_qty_curr": 30},
+            "HK-007": {"days_out_of_stock_curr": 0, "stock_qty_curr": 28},
+            "HK-008": {"days_out_of_stock_curr": 0, "stock_qty_curr": 24},
+            "HK-010": {"days_out_of_stock_curr": 0, "stock_qty_curr": 25},
+        },
+        repriced_skus=list(FOLLOWUP_SNAPSHOT["repriced_skus"]),
+        oos_target_max=FOLLOWUP_SNAPSHOT["targets"]["out_of_stock_skus_max"],
+        cancellation_target_pct_max=FOLLOWUP_SNAPSHOT["targets"]["cancellation_rate_pct_max"],
+        monthly_sales_pace_target=FOLLOWUP_SNAPSHOT["targets"]["monthly_sales_pace_target"],
+        default_prior_commitments=tuple(dict(item) for item in FOLLOWUP_SNAPSHOT["default_prior_commitments"]),
+        blocker_notes={"HK-009": "Supplier shipment delayed by 2 days"},
+    )
+    return SellerContext(
+        profile=profile,
+        skus=build_sku_catalog(),
+        cancellations=cancellations,
+        funnel=funnel,
+        followup=followup,
+    )
+
+
+def get_scenario_context(scenario_id: str | None = None) -> SellerContext:
+    """Return a fresh SellerContext for the requested built-in scenario."""
+    return build_seed_seller_context()
+
+
+def list_scenarios() -> list[dict[str, str]]:
+    """Return metadata descriptors for built-in demo scenarios."""
+    ctx = build_seed_seller_context()
+    return [
+        {
+            "scenario_id": ctx.profile.scenario_id,
+            "title": ctx.profile.scenario_title,
+            "description": ctx.profile.scenario_description,
+            "shop_name": ctx.profile.shop_name,
+            "category": ctx.profile.category,
+        }
+    ]
+
 
